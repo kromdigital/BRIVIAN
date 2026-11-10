@@ -37,12 +37,58 @@ function cleanUrl(raw) {
 }
 const cssUrl = (u) => `url('${u.replace(/['()]/g, (c) => '%' + c.charCodeAt(0).toString(16))}')`;
 
+/* La foto va en un <img> sobre las iniciales: si el enlace falla, se quedan las iniciales (nunca un círculo vacío) */
+const avatarImg = (u) => (u ? `<img class="av-img" src="${esc(u)}" alt="" referrerpolicy="no-referrer" decoding="async">` : '');
 const avatarHTML = (name, size = 'sm', img) => {
   const [c1, c2] = colorsFor(name);
-  const u = cleanUrl(img);
-  const style = u ? `background-image:${cssUrl(u)}` : `--c1:${c1};--c2:${c2}`;
-  return `<span class="avatar ${size}" style="${esc(style)}">${u ? '' : esc(initials(name))}</span>`;
+  return `<span class="avatar ${size}" style="${esc(`--c1:${c1};--c2:${c2}`)}">${esc(initials(name))}${avatarImg(cleanUrl(img))}</span>`;
 };
+document.addEventListener('load', (e) => { const t = e.target; if (t.classList && t.classList.contains('av-img')) t.parentElement.classList.add('loaded'); }, true);
+document.addEventListener('error', (e) => {
+  const t = e.target; if (!t.classList) return;
+  if (t.classList.contains('av-img')) t.remove();
+  else if (t.classList.contains('post-img')) t.style.display = 'none';
+}, true);
+
+/* Comprueba que un enlace sea de verdad una imagen que se puede mostrar */
+function checkImage(url, ms = 8000) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.referrerPolicy = 'no-referrer';
+    const t = setTimeout(() => { img.src = ''; resolve('timeout'); }, ms);
+    img.onload = () => { clearTimeout(t); resolve('ok'); };
+    img.onerror = () => { clearTimeout(t); resolve('error'); };
+    img.src = url;
+  });
+}
+const IMG_HELP = 'No pudimos cargar esa imagen. Usa el enlace directo a la imagen (suele terminar en .jpg, .png o .webp): mantén presionada la imagen y elige "Copiar dirección de imagen". Un enlace de página, de Google Imágenes o de Instagram no funciona.';
+/* Al escribir un enlace muestra al instante si carga bien (y la vista previa, si hay) */
+function watchImageInput(input, status, onUrl) {
+  let seq = 0, timer;
+  const run = async () => {
+    const my = ++seq, raw = input.value.trim();
+    status.className = 'img-status';
+    if (!raw) { status.textContent = ''; onUrl && onUrl(''); return; }
+    const u = cleanUrl(raw);
+    if (!u) { status.textContent = 'El enlace debe empezar con https://'; status.classList.add('bad'); onUrl && onUrl(''); return; }
+    status.textContent = 'Cargando imagen…';
+    const r = await checkImage(u);
+    if (my !== seq) return;
+    if (r === 'ok') { status.textContent = '✓ Imagen lista'; status.classList.add('ok'); onUrl && onUrl(u); }
+    else if (r === 'error') { status.textContent = IMG_HELP; status.classList.add('bad'); onUrl && onUrl(''); }
+    else { status.textContent = 'La imagen tarda en cargar; se guardará de todos modos.'; onUrl && onUrl(u); }
+  };
+  input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(run, 450); });
+  return { run, clear() { seq++; clearTimeout(timer); status.textContent = ''; status.className = 'img-status'; } };
+}
+/* Para validar al guardar: devuelve un mensaje de error o '' */
+async function imageProblem(raw, label) {
+  const v = String(raw || '').trim();
+  if (!v) return '';
+  const u = cleanUrl(v);
+  if (!u) return `El enlace de ${label} debe empezar con https://`;
+  return (await checkImage(u)) === 'error' ? `${IMG_HELP} (${label})` : '';
+}
 
 const toMs = (ts) => (ts && typeof ts.toMillis === 'function' ? ts.toMillis() : ts instanceof Date ? ts.getTime() : Date.now());
 const timeAgo = (ts) => {
@@ -323,8 +369,8 @@ function applyMe() {
   const av = cleanUrl(ME.avatar);
   [...$$('[data-me]'), $('#topAvatar')].forEach((el) => {
     el.style.setProperty('--c1', c1); el.style.setProperty('--c2', c2);
-    el.style.backgroundImage = av ? cssUrl(av) : '';
-    el.textContent = av ? '' : initials(ME.name);
+    el.classList.remove('loaded');
+    el.innerHTML = esc(initials(ME.name)) + avatarImg(av);
   });
   $$('[data-me-name]').forEach((el) => (el.textContent = ME.name));
   $$('[data-me-handle]').forEach((el) => (el.textContent = ME.handle));
@@ -1304,7 +1350,7 @@ function renderProfile() {
   $('#pBio').textContent = ME.bio || '';
   $('#pBio').hidden = !ME.bio;
   const cover = cleanUrl(ME.cover);
-  $('#cover').style.backgroundImage = cover ? cssUrl(cover) : '';
+  $('#cover').style.setProperty('--img', cover ? cssUrl(cover) : 'none');
   $('#stFollowers').textContent = Math.max(0, ME.followersCount || 0);
   $('#stFollowing').textContent = state.following.size;
   const left = FOLLOWERS_TO_CREATE - followersNow();
@@ -1363,23 +1409,25 @@ $('#editBtn').addEventListener('click', () => {
   $('#eColonia').value = ME.colonia || '';
   $('#eAvatar').value = ME.avatar || '';
   $('#eCover').value = ME.cover || '';
+  editAvatarWatch.clear(); editCoverWatch.clear();
   $('#editError').hidden = true;
   openModal($('#editSheet'), '#editClose');
 });
 $('#editClose').addEventListener('click', () => closeModal($('#editSheet')));
 $('#editSheet').addEventListener('click', (e) => { if (e.target.id === 'editSheet') closeModal($('#editSheet')); });
+const editAvatarWatch = watchImageInput($('#eAvatar'), $('#eAvatarStatus'));
+const editCoverWatch = watchImageInput($('#eCover'), $('#eCoverStatus'));
 $('#editSave').addEventListener('click', async () => {
   const err = $('#editError');
   const fail = (m) => { err.textContent = m; err.hidden = false; };
   const name = $('#eName').value.trim();
   if (name.length < 2) return fail('Escribe el nombre de tu emprendimiento.');
-  const rawA = $('#eAvatar').value.trim(), rawC = $('#eCover').value.trim();
-  const avatar = cleanUrl(rawA), cover = cleanUrl(rawC);
-  if (rawA && !avatar) return fail('El enlace de la foto de perfil debe empezar con https://');
-  if (rawC && !cover) return fail('El enlace de la portada debe empezar con https://');
+  const avatar = cleanUrl($('#eAvatar').value), cover = cleanUrl($('#eCover').value);
   const place = readPlace('e');
   const pErr = placeError(place); if (pErr) return fail(pErr);
   const btn = $('#editSave'); btn.disabled = true;
+  const imgErr = (await imageProblem($('#eAvatar').value, 'la foto de perfil')) || (await imageProblem($('#eCover').value, 'la portada'));
+  if (imgErr) { btn.disabled = false; return fail(imgErr); }
   try {
     await saveProfile({
       name, category: $('#eCat').value, role: $('#eRole').value, bio: $('#eBio').value.trim(),
@@ -1800,15 +1848,15 @@ async function validateStep(n) {
   if (n === 3) return REG.social.validate().error;
   if (n === 4) {
     const pErr = placeError(readPlace('r')); if (pErr) return pErr;
-    if ($('#rAvatarUrl').value.trim() && !cleanUrl($('#rAvatarUrl').value)) return 'El enlace de la foto de perfil debe empezar con https://';
-    if ($('#rCoverUrl').value.trim() && !cleanUrl($('#rCoverUrl').value)) return 'El enlace de la portada debe empezar con https://';
+    const imgErr = (await imageProblem($('#rAvatarUrl').value, 'la foto de perfil')) || (await imageProblem($('#rCoverUrl').value, 'la portada'));
+    if (imgErr) return imgErr;
   }
   return '';
 }
 $('#rName').addEventListener('input', (e) => { if (!REG.handleTouched) $('#rHandle').value = slug(e.target.value); });
 $('#rHandle').addEventListener('input', (e) => { REG.handleTouched = true; e.target.value = e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''); });
-$('#rAvatarUrl').addEventListener('input', (e) => previewPick($('#avatarPick'), e.target.value));
-$('#rCoverUrl').addEventListener('input', (e) => previewPick($('#coverPick'), e.target.value));
+const regAvatarWatch = watchImageInput($('#rAvatarUrl'), $('#rAvatarStatus'), (u) => previewPick($('#avatarPick'), u));
+const regCoverWatch = watchImageInput($('#rCoverUrl'), $('#rCoverStatus'), (u) => previewPick($('#coverPick'), u));
 $('#regBack').addEventListener('click', () => (REG.step > 1 ? showStep(REG.step - 1) : (location.hash = 'landing')));
 $('#skipSocials').addEventListener('click', () => { REG.social.reset({}); showStep(4); });
 
@@ -1817,6 +1865,7 @@ function resetRegForm() {
   REG.handleTouched = false;
   REG.social.reset({});
   previewPick($('#avatarPick'), ''); previewPick($('#coverPick'), '');
+  regAvatarWatch.clear(); regCoverWatch.clear();
   showStep(1);
 }
 $('#regForm').addEventListener('submit', async (e) => {

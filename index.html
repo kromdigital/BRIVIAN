@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#1B4F9C">
+  <!-- Sin "referer": muchas webs bloquean sus imágenes cuando las pide otra página -->
+  <meta name="referrer" content="no-referrer">
   <title>BRIVIAN · Tu emprendimiento merece ser descubierto</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -134,8 +136,10 @@
         <div class="reg-preview"><strong id="prevName"></strong><small class="muted" id="prevHandle"></small></div>
         <label class="field-label" for="rAvatarUrl">Enlace de tu foto de perfil <span class="muted">(opcional)</span></label>
         <input class="input" id="rAvatarUrl" type="url" inputmode="url" autocapitalize="none" autocomplete="off" placeholder="https://…">
+        <small class="img-status" id="rAvatarStatus" role="status" aria-live="polite"></small>
         <label class="field-label" for="rCoverUrl">Enlace de tu portada <span class="muted">(opcional)</span></label>
         <input class="input" id="rCoverUrl" type="url" inputmode="url" autocapitalize="none" autocomplete="off" placeholder="https://…">
+        <small class="img-status" id="rCoverStatus" role="status" aria-live="polite"></small>
         <label class="field-label" for="rCountry">País</label>
         <input class="input" id="rCountry" list="dlCountries" maxlength="60" autocomplete="off" value="México" placeholder="Elige de la lista o escribe el tuyo">
         <label class="field-label" for="rState">Estado o región <span class="muted">(opcional)</span></label>
@@ -144,7 +148,7 @@
         <input class="input" id="rMuni" list="dlCities" maxlength="60" autocomplete="off" placeholder="Ej. Zapopan">
         <label class="field-label" for="rColonia">Colonia o zona <span class="muted">(opcional)</span></label>
         <input class="input" id="rColonia" maxlength="60" placeholder="Ej. Colonia Americana">
-        <small class="muted">Las fotos son opcionales: puedes agregarlas después desde "Editar perfil". El enlace debe empezar con https://</small>
+        <small class="muted">Las fotos son opcionales: puedes agregarlas después desde "Editar perfil". Usa el <strong>enlace directo a la imagen</strong> (empieza con https:// y suele terminar en .jpg o .png).</small>
       </fieldset>
 
       <p class="form-error" id="regError" role="alert" hidden></p>
@@ -496,8 +500,10 @@
       <input class="input" id="eColonia" maxlength="60">
       <label class="field-label" for="eAvatar">Enlace de tu foto de perfil</label>
       <input class="input" id="eAvatar" type="url" inputmode="url" autocapitalize="none" autocomplete="off" placeholder="https://…">
+      <small class="img-status" id="eAvatarStatus" role="status" aria-live="polite"></small>
       <label class="field-label" for="eCover">Enlace de tu portada</label>
       <input class="input" id="eCover" type="url" inputmode="url" autocapitalize="none" autocomplete="off" placeholder="https://…">
+      <small class="img-status" id="eCoverStatus" role="status" aria-live="polite"></small>
       <p class="form-error" id="editError" role="alert" hidden></p>
       <button class="btn btn-primary btn-block" id="editSave" type="button">Guardar cambios</button>
     </div>
