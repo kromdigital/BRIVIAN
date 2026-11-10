@@ -35,6 +35,23 @@ function cleanUrl(raw) {
     return u.protocol === 'https:' && u.hostname.includes('.') ? u.href : '';
   } catch { return ''; }
 }
+/* Enlaces de IMAGEN: acepta cualquier URL que cargue como imagen (no hace falta que termine en .jpg).
+   Además arregla los enlaces más comunes que no son la imagen en sí. */
+function imgUrl(raw) {
+  const v = String(raw || '').trim().replace(/^http:\/\//i, 'https://');
+  const c = cleanUrl(v);
+  if (!c) return '';
+  try {
+    const u = new URL(c), host = u.hostname.replace(/^www\./, '');
+    if (host === 'drive.google.com') {                       // Drive (compartido con "cualquiera con el enlace")
+      const id = (u.pathname.match(/\/file\/d\/([\w-]+)/) || [])[1] || u.searchParams.get('id');
+      if (id && /^[\w-]+$/.test(id)) return `https://lh3.googleusercontent.com/d/${id}`;
+    }
+    if (host === 'dropbox.com') { u.searchParams.delete('dl'); u.searchParams.set('raw', '1'); return u.href; }
+    if (host === 'imgur.com' && /^\/[A-Za-z0-9]{5,10}$/.test(u.pathname)) return `https://i.imgur.com${u.pathname}.jpg`;
+  } catch { /* se usa el enlace tal cual */ }
+  return c;
+}
 const cssUrl = (u) => `url('${u.replace(/['()]/g, (c) => '%' + c.charCodeAt(0).toString(16))}')`;
 
 /* La foto va en un <img> sobre las iniciales: si el enlace falla, se quedan las iniciales (nunca un círculo vacío) */
@@ -61,7 +78,7 @@ function checkImage(url, ms = 8000) {
     img.src = url;
   });
 }
-const IMG_HELP = 'No pudimos cargar esa imagen. Usa el enlace directo a la imagen (suele terminar en .jpg, .png o .webp): mantén presionada la imagen y elige "Copiar dirección de imagen". Un enlace de página, de Google Imágenes o de Instagram no funciona.';
+const IMG_HELP = 'No pudimos cargar esa imagen. Sirve cualquier enlace que sea la imagen en sí (no hace falta que termine en .jpg). Si es de una página, mantén presionada la imagen y elige "Copiar dirección de imagen"; los enlaces de Google Imágenes, Instagram o Pinterest no funcionan. También aceptamos enlaces de Google Drive (compartido con cualquiera que tenga el enlace), Dropbox e Imgur.';
 /* Al escribir un enlace muestra al instante si carga bien (y la vista previa, si hay) */
 function watchImageInput(input, status, onUrl) {
   let seq = 0, timer;
@@ -69,8 +86,8 @@ function watchImageInput(input, status, onUrl) {
     const my = ++seq, raw = input.value.trim();
     status.className = 'img-status';
     if (!raw) { status.textContent = ''; onUrl && onUrl(''); return; }
-    const u = cleanUrl(raw);
-    if (!u) { status.textContent = 'El enlace debe empezar con https://'; status.classList.add('bad'); onUrl && onUrl(''); return; }
+    const u = imgUrl(raw);
+    if (!u) { status.textContent = 'Pega un enlace de internet (https://…).'; status.classList.add('bad'); onUrl && onUrl(''); return; }
     status.textContent = 'Cargando imagen…';
     const r = await checkImage(u);
     if (my !== seq) return;
@@ -85,8 +102,8 @@ function watchImageInput(input, status, onUrl) {
 async function imageProblem(raw, label) {
   const v = String(raw || '').trim();
   if (!v) return '';
-  const u = cleanUrl(v);
-  if (!u) return `El enlace de ${label} debe empezar con https://`;
+  const u = imgUrl(v);
+  if (!u) return `El enlace de ${label} no es válido. Pega un enlace de internet (https://…).`;
   return (await checkImage(u)) === 'error' ? `${IMG_HELP} (${label})` : '';
 }
 
@@ -650,7 +667,7 @@ $('#postBody').addEventListener('input', (e) => {
   $('#publishBtn').disabled = e.target.value.trim().length < 3;
 });
 $('#postImgUrl').addEventListener('input', (e) => {
-  const u = cleanUrl(e.target.value);
+  const u = imgUrl(e.target.value);
   const img = $('#preview');
   if (u) { img.hidden = false; img.src = u; } else { img.hidden = true; img.removeAttribute('src'); }
 });
@@ -659,8 +676,8 @@ $('#postForm').addEventListener('submit', async (e) => {
   const body = $('#postBody').value.trim();
   if (body.length < 3) return;
   const rawImg = $('#postImgUrl').value.trim();
-  const imageUrl = cleanUrl(rawImg);
-  if (rawImg && !imageUrl) { toast('El enlace de la foto debe empezar con https://'); return; }
+  const imageUrl = imgUrl(rawImg);
+  if (rawImg && !imageUrl) { toast('El enlace de la foto no es válido.'); return; }
   const tags = $('#postTags').value.split(',').map((t) => t.trim().replace(/^#/, '').slice(0, 30)).filter(Boolean).slice(0, 5);
   const post = {
     authorUid: ME.uid, handle: ME.handle, name: ME.name, avatar: cleanUrl(ME.avatar),
@@ -1422,7 +1439,7 @@ $('#editSave').addEventListener('click', async () => {
   const fail = (m) => { err.textContent = m; err.hidden = false; };
   const name = $('#eName').value.trim();
   if (name.length < 2) return fail('Escribe el nombre de tu emprendimiento.');
-  const avatar = cleanUrl($('#eAvatar').value), cover = cleanUrl($('#eCover').value);
+  const avatar = imgUrl($('#eAvatar').value), cover = imgUrl($('#eCover').value);
   const place = readPlace('e');
   const pErr = placeError(place); if (pErr) return fail(pErr);
   const btn = $('#editSave'); btn.disabled = true;
@@ -1813,7 +1830,7 @@ const REG = { step: 1, handleTouched: false, social: createSocialEditor($('#regS
 const slug = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 20);
 
 function previewPick(box, url) {
-  const u = cleanUrl(url);
+  const u = imgUrl(url);
   box.style.backgroundImage = u ? cssUrl(u) : '';
   box.classList.toggle('has-img', !!u);
 }
@@ -1887,7 +1904,7 @@ $('#regForm').addEventListener('submit', async (e) => {
       category: $('#rCat').value, role: $('#rRole').value, bio: $('#rBio').value.trim(),
       ...place,
       since: new Date().getFullYear(),
-      avatar: cleanUrl($('#rAvatarUrl').value), cover: cleanUrl($('#rCoverUrl').value),
+      avatar: imgUrl($('#rAvatarUrl').value), cover: imgUrl($('#rCoverUrl').value),
       socials: REG.social.validate().values, followersCount: 0,
     };
 
