@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-190 -190 380 380" role="img" aria-label="BRIVIAN">
+  <style>
+    .d { fill: #111827; }
+    @media (prefers-color-scheme: dark) { .d { fill: #ffffff; } }
+  </style>
+  <g class="d">
+    <circle r="36"/>
+    <g id="arm">
+      <circle cy="-73" r="11"/><circle cy="-104" r="11.5"/><circle cy="-137" r="12"/><circle cy="-169" r="12.5"/>
+    </g>
+    <use href="#arm" transform="rotate(90)"/>
+    <use href="#arm" transform="rotate(180)"/>
+    <use href="#arm" transform="rotate(270)"/>
+    <g id="q">
+      <circle cx="-40" cy="-138" r="12"/><circle cx="-71" cy="-115" r="9"/><circle cx="-104" cy="-116" r="11"/>
+      <circle cx="-46" cy="-98" r="8.5"/><circle cx="-77" cy="-79" r="10"/><circle cx="-106" cy="-80" r="9"/>
+      <circle cx="-53" cy="-62" r="10"/><circle cx="-100" cy="-42" r="10"/><circle cx="-136" cy="-52" r="11"/>
+    </g>
+    <use href="#q" transform="scale(-1 1)"/>
+    <use href="#q" transform="scale(1 -1)"/>
+    <use href="#q" transform="scale(-1 -1)"/>
+  </g>
+</svg>

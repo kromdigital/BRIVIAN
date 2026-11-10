@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1B4F9C">
+  <title>BRIVIAN · Tu emprendimiento merece ser descubierto</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="icon" href="logo-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<!-- Símbolo del logo (se reutiliza con <use href="#bv-mark">) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="bv-mark" viewBox="-190 -190 380 380">
+    <g fill="currentColor">
+      <circle r="36"/>
+      <g id="bv-arm">
+        <circle cy="-73" r="11"/><circle cy="-104" r="11.5"/><circle cy="-137" r="12"/><circle cy="-169" r="12.5"/>
+      </g>
+      <use href="#bv-arm" transform="rotate(90)"/>
+      <use href="#bv-arm" transform="rotate(180)"/>
+      <use href="#bv-arm" transform="rotate(270)"/>
+      <g id="bv-q">
+        <circle cx="-40" cy="-138" r="12"/><circle cx="-71" cy="-115" r="9"/><circle cx="-104" cy="-116" r="11"/>
+        <circle cx="-46" cy="-98" r="8.5"/><circle cx="-77" cy="-79" r="10"/><circle cx="-106" cy="-80" r="9"/>
+        <circle cx="-53" cy="-62" r="10"/><circle cx="-100" cy="-42" r="10"/><circle cx="-136" cy="-52" r="11"/>
+      </g>
+      <use href="#bv-q" transform="scale(-1 1)"/>
+      <use href="#bv-q" transform="scale(1 -1)"/>
+      <use href="#bv-q" transform="scale(-1 -1)"/>
+    </g>
+  </symbol>
+</svg>
+<div class="device">
+
+  <!-- ============ SPLASH (al abrir, como app) ============ -->
+  <div class="splash" id="splash" aria-hidden="true">
+    <div class="splash-inner">
+      <svg class="logo-mark"><use href="#bv-mark"/></svg>
+      <div class="brand-name" data-wordmark></div>
+      <p>Tu emprendimiento merece ser descubierto</p>
+    </div>
+  </div>
+
+  <!-- ============ INICIO DE SESIÓN ============ -->
+  <section id="login" class="auth" hidden>
+    <div class="auth-top">
+      <a href="#landing" class="icon-btn" aria-label="Volver"><i data-lucide="arrow-left"></i></a>
+    </div>
+    <div class="auth-brand">
+      <svg class="logo-mark" aria-hidden="true"><use href="#bv-mark"/></svg>
+      <div class="brand-name" data-wordmark></div>
+    </div>
+    <h1>Bienvenido de vuelta</h1>
+    <p class="page-sub">Entra para ver lo que está pasando en tu comunidad.</p>
+    <form id="loginForm" novalidate>
+      <label class="field-label" for="lEmail">Correo</label>
+      <input class="input" id="lEmail" type="email" autocomplete="email" inputmode="email" placeholder="tu@correo.com">
+      <label class="field-label" for="lPass">Contraseña</label>
+      <div class="pass">
+        <input class="input" id="lPass" type="password" autocomplete="current-password" placeholder="Tu contraseña">
+        <button type="button" class="icon-btn" data-toggle-pass aria-label="Mostrar contraseña"><i data-lucide="eye"></i></button>
+      </div>
+      <p class="form-error" id="lError" role="alert" hidden></p>
+      <button class="btn btn-primary btn-block" type="submit">Entrar</button>
+      <button type="button" class="link-quiet center" id="forgotBtn">¿Olvidaste tu contraseña?</button>
+    </form>
+    <p class="auth-switch">¿Aún no tienes perfil? <a href="#registro">Crear mi perfil gratis</a></p>
+  </section>
+
+  <!-- ============ CREAR CUENTA (4 pasos) ============ -->
+  <section id="registro" class="auth" hidden>
+    <div class="auth-top">
+      <button class="icon-btn" id="regBack" type="button" aria-label="Atrás"><i data-lucide="arrow-left"></i></button>
+      <span class="step-label" id="stepLabel">Paso 1 de 4</span>
+    </div>
+    <div class="auth-brand compact">
+      <svg class="logo-mark" aria-hidden="true"><use href="#bv-mark"/></svg>
+      <div class="brand-name" data-wordmark></div>
+    </div>
+    <div class="progress"><span id="regProgress" style="width:25%"></span></div>
+
+    <form id="regForm" novalidate>
+      <!-- Paso 1 -->
+      <fieldset class="reg-step" data-step="1">
+        <h1>Crea tu cuenta</h1>
+        <p class="page-sub">Es gratis y toma menos de dos minutos.</p>
+        <label class="field-label" for="rEmail">Correo</label>
+        <input class="input" id="rEmail" type="email" autocomplete="email" inputmode="email" placeholder="tu@correo.com">
+        <label class="field-label" for="rPass">Contraseña</label>
+        <div class="pass">
+          <input class="input" id="rPass" type="password" autocomplete="new-password" placeholder="Mínimo 8 caracteres">
+          <button type="button" class="icon-btn" data-toggle-pass aria-label="Mostrar contraseña"><i data-lucide="eye"></i></button>
+        </div>
+        <label class="check"><input type="checkbox" id="rTerms"> <span>Acepto los términos de uso y el aviso de privacidad de BRIVIAN.</span></label>
+      </fieldset>
+
+      <!-- Paso 2 -->
+      <fieldset class="reg-step" data-step="2" hidden>
+        <h1>Cuéntanos de tu emprendimiento</h1>
+        <p class="page-sub">Así te van a ver los demás en la comunidad.</p>
+        <label class="field-label" for="rName">Nombre del emprendimiento</label>
+        <input class="input" id="rName" maxlength="40" autocomplete="organization" placeholder="Ej. Aurora Studio">
+        <label class="field-label" for="rHandle">Usuario</label>
+        <div class="handle-input"><span>@</span><input class="input" id="rHandle" maxlength="20" autocapitalize="none" autocomplete="off" placeholder="aurorastudio"></div>
+        <label class="field-label" for="rCat">Categoría</label>
+        <select class="select" id="rCat"></select>
+        <label class="field-label" for="rRole">¿Qué eres?</label>
+        <select class="select" id="rRole">
+          <option>Negocio local</option><option>Creador de contenido</option><option>Freelance / Profesional</option>
+          <option>Artesano/a</option><option>Empresa</option><option>Otro</option>
+        </select>
+        <label class="field-label" for="rBio">Descripción corta <span class="muted">(opcional)</span></label>
+        <textarea id="rBio" rows="3" maxlength="160" placeholder="¿Qué haces y para quién?"></textarea>
+      </fieldset>
+
+      <!-- Paso 3: redes sociales -->
+      <fieldset class="reg-step" data-step="3" hidden>
+        <h1>Conecta con otros</h1>
+        <p class="page-sub">Elige las redes por las que quieres que te contacten. Aparecerán como botones rápidos en tu perfil.</p>
+        <div id="regSocials"></div>
+        <button type="button" class="link-quiet center" id="skipSocials">Omitir por ahora</button>
+      </fieldset>
+
+      <!-- Paso 4: foto, portada y zona -->
+      <fieldset class="reg-step" data-step="4" hidden>
+        <h1>Tu cara y tu zona</h1>
+        <p class="page-sub">Agrega tu foto y una portada, y dinos dónde estás para que te encuentren cerca.</p>
+        <div class="cover-pick" id="coverPick"><span class="pick-hint"><i data-lucide="image-plus"></i> Portada</span></div>
+        <div class="avatar-pick" id="avatarPick"><span class="pick-hint"><i data-lucide="camera"></i> Foto</span></div>
+        <div class="reg-preview"><strong id="prevName"></strong><small class="muted" id="prevHandle"></small></div>
+        <label class="field-label" for="rAvatarUrl">Enlace de tu foto de perfil <span class="muted">(opcional)</span></label>
+        <input class="input" id="rAvatarUrl" type="url" inputmode="url" autocapitalize="none" autocomplete="off" placeholder="https://…">
+        <label class="field-label" for="rCoverUrl">Enlace de tu portada <span class="muted">(opcional)</span></label>
+        <input class="input" id="rCoverUrl" type="url" inputmode="url" autocapitalize="none" autocomplete="off" placeholder="https://…">
+        <label class="field-label" for="rCountry">País</label>
+        <input class="input" id="rCountry" list="dlCountries" maxlength="60" autocomplete="off" value="México" placeholder="Elige de la lista o escribe el tuyo">
+        <label class="field-label" for="rState">Estado o región <span class="muted">(opcional)</span></label>
+        <input class="input" id="rState" list="dlStates" maxlength="60" autocomplete="off" placeholder="Ej. Jalisco">
+        <label class="field-label" for="rMuni">Ciudad o municipio</label>
+        <input class="input" id="rMuni" list="dlCities" maxlength="60" autocomplete="off" placeholder="Ej. Zapopan">
+        <label class="field-label" for="rColonia">Colonia o zona <span class="muted">(opcional)</span></label>
+        <input class="input" id="rColonia" maxlength="60" placeholder="Ej. Colonia Americana">
+        <small class="muted">Las fotos son opcionales: puedes agregarlas después desde "Editar perfil". El enlace debe empezar con https://</small>
+      </fieldset>
+
+      <p class="form-error" id="regError" role="alert" hidden></p>
+      <button class="btn btn-primary btn-block" id="regNext" type="submit">Continuar</button>
+    </form>
+    <p class="auth-switch">¿Ya tienes cuenta? <a href="#login">Inicia sesión</a></p>
+  </section>
+
+  <!-- ============ LANDING (pública) ============ -->
+  <div id="landing">
+    <header class="land-top">
+      <a class="brand" href="#landing" aria-label="BRIVIAN, volver al inicio">
+        <svg class="logo-mark" aria-hidden="true"><use href="#bv-mark"/></svg>
+        <span class="brand-name" aria-hidden="true">BRIVI<svg class="lam" viewBox="0 0 10 10"><path d="M1 10 5 1.2 9 10" fill="none" stroke="currentColor" stroke-width="2.3"/></svg>N</span>
+      </a>
+      <button class="icon-btn" id="menuBtn" aria-label="Abrir menú" aria-expanded="false"><i data-lucide="menu"></i></button>
+    </header>
+    <nav class="land-menu" id="landMenu" hidden>
+      <a href="#como-funciona">Cómo funciona</a>
+      <a href="#categorias">Categorías</a>
+      <a href="#comunidades">Comunidades</a>
+      <a href="#faq">Preguntas frecuentes</a>
+      <a href="#login" id="menuLogin">Iniciar sesión</a>
+      <a href="#registro" id="menuCta" class="btn btn-primary">Crear mi perfil gratis</a>
+    </nav>
+
+    <section class="hero">
+      <span class="pill"><i data-lucide="map-pin"></i> Desde Jalisco para todo el mundo</span>
+      <h1>Tu emprendimiento merece <span class="accent">ser descubierto</span></h1>
+      <p>Conecta con otros emprendedores, descubre nuevos negocios y construye una comunidad que impulse tu presencia digital.</p>
+      <a href="#registro" id="heroCta" class="btn btn-accent btn-block"><i data-lucide="user-plus"></i> Crear mi perfil gratis</a>
+      <a href="#explorar" class="btn btn-ghost-light btn-block"><i data-lucide="compass"></i> Explorar emprendimientos</a>
+      <p class="hero-login" id="heroLogin">¿Ya tienes cuenta? <a href="#login">Inicia sesión</a></p>
+    </section>
+
+    <section class="section" id="como-funciona">
+      <p class="eyebrow">Cómo funciona</p>
+      <h2>Cuatro pasos para dejar de ser invisible</h2>
+      <p class="lead">BRIVIAN no es un catálogo de anuncios. Es una red donde cada perfil cuenta una historia y cada interacción tiene una razón.</p>
+      <div class="steps">
+        <article class="step"><div class="step-top"><span class="step-ico"><i data-lucide="user-round"></i></span><span class="step-num">01</span></div><h3>Crea tu perfil público</h3><p>Cuenta qué haces, en qué ciudad estás y cuáles son tus servicios o productos.</p></article>
+        <article class="step"><div class="step-top"><span class="step-ico"><i data-lucide="search"></i></span><span class="step-num">02</span></div><h3>Descubre negocios</h3><p>Explora por categoría, ciudad o palabra clave y encuentra quién hace lo que necesitas.</p></article>
+        <article class="step"><div class="step-top"><span class="step-ico"><i data-lucide="message-circle"></i></span><span class="step-num">03</span></div><h3>Interactúa con criterio</h3><p>Sigue perfiles, comenta con información útil y guarda lo que quieras revisar. Sin métricas infladas ni interacciones automáticas.</p></article>
+        <article class="step"><div class="step-top"><span class="step-ico"><i data-lucide="users"></i></span><span class="step-num">04</span></div><h3>Crece en comunidad</h3><p>Únete a comunidades de tu sector o ciudad, participa en retos de apoyo mutuo y comparte tus canales externos.</p></article>
+      </div>
+    </section>
+
+    <section class="section" id="categorias">
+      <p class="eyebrow">Categorías populares</p>
+      <h2>Encuentra por lo que haces</h2>
+      <p class="lead">Diez categorías para ordenar el descubrimiento sin perder los matices de cada oficio.</p>
+      <a href="#explorar" class="link-arrow">Ver todas en el explorador <i data-lucide="arrow-right"></i></a>
+      <div class="cat-grid" id="catGrid"></div>
+    </section>
+
+    <section class="section" id="comunidades">
+      <p class="eyebrow">Comunidades activas</p>
+      <h2>Mejor en compañía</h2>
+      <p class="lead">Comunidades por sector y por ciudad donde se comparten dudas reales, proveedores y oportunidades de colaboración.</p>
+      <a href="#comunidad" class="btn btn-outline">Ver comunidades <i data-lucide="arrow-right"></i></a>
+      <div class="com-hero-list" id="landCom"></div>
+    </section>
+
+    <section class="section" id="faq">
+      <p class="eyebrow">Preguntas frecuentes</p>
+      <h2>Sin letras chiquitas</h2>
+      <p class="lead">Lo que más nos preguntan antes de crear un perfil. Si te queda otra duda, escríbenos.</p>
+      <a href="mailto:hola@brivian.com" class="btn btn-outline"><i data-lucide="mail"></i> Contactar al equipo</a>
+      <div class="faq">
+        <details><summary>¿BRIVIAN es una tienda en línea?</summary><p>No. BRIVIAN es una comunidad para descubrir y apoyar emprendimientos. Las ventas siguen ocurriendo en tus propios canales.</p></details>
+        <details><summary>¿Tiene costo publicar mi perfil?</summary><p>Crear y publicar tu perfil es gratis.</p></details>
+        <details><summary>¿Garantizan seguidores o clientes?</summary><p>No. No prometemos números: te damos visibilidad real y una comunidad que interactúa con criterio.</p></details>
+        <details><summary>¿Puedo compartir mis redes sociales?</summary><p>Sí. Puedes agregar tus canales externos (Instagram, WhatsApp, sitio web) a tu perfil.</p></details>
+        <details><summary>¿Puedo crear mi propia comunidad o grupo?</summary><p>Sí. Crear comunidades y grupos se desbloquea cuando tu perfil llega a 10 seguidores. Así cuidamos que cada espacio lo abran personas con una red real en BRIVIAN.</p></details>
+      </div>
+    </section>
+
+    <footer class="land-foot">
+      <p>© <span id="year"></span> BRIVIAN · Un proyecto de Krom Digital</p>
+    </footer>
+  </div>
+
+  <!-- ============ APP (con sesión) ============ -->
+  <datalist id="dlCountries"></datalist><datalist id="dlStates"></datalist><datalist id="dlCities"></datalist>
+
+  <div id="app" hidden>
+    <header class="topbar">
+      <a class="brand" href="#landing" aria-label="BRIVIAN, volver al inicio">
+        <svg class="logo-mark" aria-hidden="true"><use href="#bv-mark"/></svg>
+        <span class="brand-name" aria-hidden="true">BRIVI<svg class="lam" viewBox="0 0 10 10"><path d="M1 10 5 1.2 9 10" fill="none" stroke="currentColor" stroke-width="2.3"/></svg>N</span>
+      </a>
+      <div class="top-actions">
+        <button class="icon-btn" id="themeBtn" aria-label="Cambiar tema"><i data-lucide="moon"></i></button>
+        <a href="#mensajes" class="icon-btn" id="msgBtn" aria-label="Mensajes"><i data-lucide="message-circle"></i></a>
+        <a href="#perfil" class="avatar sm" id="topAvatar" aria-label="Mi perfil"></a>
+      </div>
+    </header>
+
+    <main>
+      <!-- INICIO -->
+      <section class="view" id="view-inicio" hidden>
+        <h1 class="page-title" id="greeting"></h1>
+        <p class="page-sub">Esto es lo que está pasando hoy en tu comunidad.</p>
+
+        <div class="card onboard" id="onboard">
+          <button class="icon-btn close" id="onboardClose" aria-label="Cerrar"><i data-lucide="x"></i></button>
+          <div class="onboard-head">
+            <span class="onboard-ico"><i data-lucide="sparkles"></i></span>
+            <div>
+              <h3>Completa tu perfil para que te encuentren</h3>
+              <p id="onboardText"></p>
+            </div>
+          </div>
+          <div class="onboard-actions">
+            <a href="#perfil" class="btn btn-primary">Completar perfil</a>
+            <a href="#explorar" class="link-quiet">Descubrir negocios</a>
+          </div>
+          <div class="progress" id="onboardProgress" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"><span id="onboardBar" style="width:0%"></span></div>
+          <small class="muted" id="onboardPct"></small>
+        </div>
+
+        <div class="card composer">
+          <a href="#crear" class="avatar sm" data-me></a>
+          <a href="#crear" class="composer-input">¿Qué está pasando en tu emprendimiento?</a>
+          <div class="composer-chips">
+            <a href="#crear" data-type="Portafolio"><i data-lucide="image"></i> Foto</a>
+            <a href="#crear" data-type="Servicio"><i data-lucide="briefcase"></i> Servicio</a>
+            <a href="#crear" data-type="Pregunta"><i data-lucide="circle-help"></i> Pregunta</a>
+            <a href="#crear" data-type="Colaboración"><i data-lucide="link"></i> Colab.</a>
+          </div>
+        </div>
+
+        <div class="tabs" id="feedTabs" role="tablist">
+          <button class="tab active" data-tab="para-ti">Para ti</button>
+          <button class="tab" data-tab="siguiendo">Siguiendo</button>
+          <button class="tab" data-tab="recientes">Recientes</button>
+          <button class="tab" data-tab="mi-zona">Mi zona</button>
+        </div>
+        <select class="select" id="feedCat" aria-label="Filtrar por categoría"></select>
+        <div id="feed" class="feed"></div>
+        <button class="btn btn-outline btn-block" id="feedMore" type="button" hidden style="margin-top:14px">Ver más publicaciones</button>
+      </section>
+
+      <!-- EXPLORAR -->
+      <section class="view" id="view-explorar" hidden>
+        <h1 class="page-title">Explorar emprendimientos</h1>
+        <p class="page-sub">Busca por nombre, categoría, servicio o palabra clave.</p>
+        <div class="card">
+          <label class="search">
+            <i data-lucide="search"></i>
+            <input type="search" id="q" placeholder="Busca 'repostería', 'fotografía'…" autocomplete="off">
+          </label>
+          <label class="field-label" for="exCat">Categoría</label>
+          <select class="select" id="exCat"></select>
+          <label class="field-label" for="exCity">Ubicación</label>
+          <select class="select" id="exCity"></select>
+          <div class="chips">
+            <button class="chip" id="chipNew"><i data-lucide="sparkles"></i> Emprendimientos nuevos</button>
+            <button class="chip" id="chipCity"><i data-lucide="map-pin"></i> Mi ciudad</button>
+          </div>
+        </div>
+        <p class="results-count" id="resultsCount"></p>
+        <div id="results" class="list"></div>
+      </section>
+
+      <!-- CREAR PUBLICACIÓN -->
+      <section class="view" id="view-crear" hidden>
+        <div class="row-between">
+          <h1 class="page-title">Crear publicación</h1>
+          <a href="#inicio" class="link-quiet"><i data-lucide="x"></i> Cancelar</a>
+        </div>
+        <p class="page-sub">Comparte un producto, un servicio, una duda o una colaboración.</p>
+        <form class="card" id="postForm" novalidate>
+          <div class="who">
+            <span class="avatar" data-me></span>
+            <div><strong data-me-name></strong><small class="muted">Publicando como @<span data-me-handle></span></small></div>
+          </div>
+          <hr>
+          <p class="field-label caps">Tipo de publicación</p>
+          <div class="chips" id="typeChips"></div>
+          <label class="field-label" for="postBody">Comparte algo de tu día a día</label>
+          <textarea id="postBody" rows="5" maxlength="500" placeholder="Cuéntale a la comunidad…"></textarea>
+          <div class="row-between"><small class="muted" id="counter">0 / 500</small></div>
+          <label class="field-label" for="postCat">Categoría</label>
+          <select class="select" id="postCat"></select>
+          <label class="field-label" for="postTags">Etiquetas (separadas por coma)</label>
+          <input class="input" id="postTags" placeholder="taller, cerámica, Tonalá">
+          <label class="field-label" for="postImgUrl">Foto <span class="muted">(opcional: pega el enlace de una imagen)</span></label>
+          <input class="input" id="postImgUrl" type="url" inputmode="url" autocapitalize="none" autocomplete="off" placeholder="https://…">
+          <img id="preview" class="preview" alt="" hidden referrerpolicy="no-referrer">
+          <button class="btn btn-primary btn-block" id="publishBtn" type="submit" disabled><i data-lucide="send"></i> Publicar</button>
+        </form>
+      </section>
+
+      <!-- COMUNIDAD -->
+      <section class="view" id="view-comunidad" hidden>
+        <h1 class="page-title">Comunidades</h1>
+        <p class="page-sub">Entra a una comunidad para chatear, dar y recibir likes, y seguir las redes de sus miembros.</p>
+        <div id="createBox"></div>
+        <div class="tabs" id="comTabs">
+          <button class="tab active" data-tab="todas">Todas</button>
+          <button class="tab" data-tab="mias">Mis comunidades</button>
+          <button class="tab" data-tab="ciudad">Mi ciudad</button>
+          <span class="muted tabs-count" id="comCount"></span>
+        </div>
+        <div id="communities" class="list"></div>
+      </section>
+
+      <!-- PERFIL -->
+      <section class="view" id="view-perfil" hidden>
+        <div class="card profile">
+          <div class="cover" id="cover">
+            <a href="#inicio" class="icon-btn glass" aria-label="Volver"><i data-lucide="arrow-left"></i></a>
+            <div class="cover-right">
+              <button class="btn btn-glass" id="shareBtn"><i data-lucide="share-2"></i> Compartir</button>
+              <button class="icon-btn glass" aria-label="Más opciones"><i data-lucide="ellipsis-vertical"></i></button>
+            </div>
+          </div>
+          <div class="profile-body">
+            <div class="profile-row">
+              <span class="avatar xl" data-me></span>
+              <button class="btn btn-primary" id="editBtn"><i data-lucide="pencil"></i> Editar perfil</button>
+            </div>
+            <h2 class="profile-name"><span data-me-name></span> <span class="badge" id="pCat"></span></h2>
+            <span class="badge neutral" id="pRole"></span>
+            <p class="handle">@<span data-me-handle></span></p>
+            <p class="bio" id="pBio" hidden></p>
+            <p class="meta"><i data-lucide="map-pin"></i> <span id="pCity"></span></p>
+            <p class="meta"><i data-lucide="calendar"></i> En BRIVIAN desde <span id="pSince"></span></p>
+
+            <div class="contact">
+              <div class="contact-head">
+                <h3 class="contact-title">Contacto y redes</h3>
+                <button class="link-quiet" id="editSocialsBtn" type="button"><i data-lucide="pencil"></i> Editar</button>
+              </div>
+              <div class="social-links" id="pSocials"></div>
+            </div>
+            <div class="stats">
+              <div><strong id="stPosts">0</strong><small>Publicaciones</small></div>
+              <div><strong id="stFollowers">128</strong><small>Seguidores</small></div>
+              <div><strong id="stFollowing">0</strong><small>Siguiendo</small></div>
+            </div>
+            <p class="unlock-hint" id="unlockHint"></p>
+          </div>
+        </div>
+        <h3 class="section-title">Mis publicaciones</h3>
+        <div id="myPosts" class="feed"></div>
+        <button class="btn btn-outline btn-block" id="logoutBtn" type="button" style="margin-top:22px"><i data-lucide="log-out"></i> Cerrar sesión</button>
+      </section>
+
+      <!-- MENSAJES (bandeja) -->
+      <section class="view" id="view-mensajes" hidden>
+        <h1 class="page-title">Mensajes</h1>
+        <p class="page-sub">Escríbete con otros emprendedores. Si aún no se siguen, tu primer mensaje llega como solicitud.</p>
+        <div class="tabs" id="msgTabs">
+          <button class="tab active" data-tab="chats">Chats</button>
+          <button class="tab" data-tab="solicitudes">Solicitudes <span class="count" id="reqCount" hidden></span></button>
+        </div>
+        <div id="chatList" class="list"></div>
+      </section>
+
+      <!-- PÁGINA DE UNA COMUNIDAD -->
+      <section class="view" id="view-comm" hidden>
+        <div class="chat-head">
+          <a href="#comunidad" class="icon-btn" aria-label="Volver a comunidades"><i data-lucide="arrow-left"></i></a>
+          <div class="chat-who" id="cmWho"></div>
+          <button class="btn btn-sm btn-primary" id="cmJoin" type="button" hidden>Unirme</button>
+        </div>
+        <div class="cm-info" id="cmInfo"></div>
+        <div class="tabs cm-tabs" id="cmTabs">
+          <button class="tab active" data-tab="chat">Chat</button>
+          <button class="tab" data-tab="apoyo">Apoyo mutuo</button>
+          <button class="tab" data-tab="miembros">Miembros</button>
+        </div>
+        <div id="cmChat"><div class="chat-msgs" id="cmMsgs" aria-live="polite"></div></div>
+        <div id="cmApoyo" class="cm-pane" hidden>
+          <form class="card cm-compose" id="cmPostForm" hidden novalidate>
+            <label class="field-label" for="cmPostBody" style="margin-top:0">Pide apoyo a la comunidad</label>
+            <textarea id="cmPostBody" rows="3" maxlength="300" placeholder="Cuéntanos qué quieres impulsar: tu último post, un producto nuevo…"></textarea>
+            <input class="input" id="cmPostLink" type="url" inputmode="url" placeholder="Enlace https:// a tu publicación (opcional)" style="margin-top:8px">
+            <p class="form-error" id="cmPostError" role="alert" hidden></p>
+            <button class="btn btn-primary btn-block" id="cmPostBtn" type="submit" style="margin-top:12px"><i data-lucide="send"></i> Publicar</button>
+          </form>
+          <div id="cmPosts"></div>
+        </div>
+        <div id="cmMembers" class="cm-pane" hidden></div>
+        <form class="chat-composer" id="cmForm" hidden>
+          <textarea id="cmInput" rows="1" maxlength="500" placeholder="Escribe a la comunidad…" aria-label="Mensaje"></textarea>
+          <button class="btn btn-primary" id="cmSend" type="submit" aria-label="Enviar"><i data-lucide="send"></i></button>
+        </form>
+      </section>
+
+      <!-- CHAT 1 a 1 -->
+      <section class="view" id="view-chat" hidden>
+        <div class="chat-head">
+          <a href="#mensajes" class="icon-btn" aria-label="Volver a mensajes"><i data-lucide="arrow-left"></i></a>
+          <div class="chat-who" id="chatWho"></div>
+          <div class="chat-menu-wrap">
+            <button class="icon-btn" id="chatMenuBtn" type="button" aria-label="Más opciones" aria-haspopup="true"><i data-lucide="ellipsis-vertical"></i></button>
+            <div class="chat-menu" id="chatMenu" hidden>
+              <button type="button" id="chatBlock">Bloquear</button>
+              <button type="button" id="chatReport">Reportar</button>
+            </div>
+          </div>
+        </div>
+        <div id="chatBanner"></div>
+        <div class="chat-msgs" id="chatMsgs" aria-live="polite"></div>
+        <form class="chat-composer" id="chatForm">
+          <textarea id="chatInput" rows="1" maxlength="1000" placeholder="Escribe un mensaje…" aria-label="Mensaje"></textarea>
+          <button class="btn btn-primary" id="chatSend" type="submit" aria-label="Enviar"><i data-lucide="send"></i></button>
+        </form>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="Navegación principal">
+      <a href="#inicio" data-view="inicio"><i data-lucide="house"></i><span>Inicio</span></a>
+      <a href="#explorar" data-view="explorar"><i data-lucide="compass"></i><span>Explorar</span></a>
+      <a href="#crear" class="fab" data-view="crear" aria-label="Crear publicación"><i data-lucide="plus"></i></a>
+      <a href="#comunidad" data-view="comunidad"><i data-lucide="users"></i><span>Comunidad</span></a>
+      <a href="#perfil" data-view="perfil"><i data-lucide="user"></i><span>Perfil</span></a>
+    </nav>
+  </div>
+
+  <!-- Panel inferior para editar el perfil -->
+  <div class="sheet-backdrop" id="editSheet" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+      <div class="sheet-head">
+        <h2 id="editTitle">Editar perfil</h2>
+        <button class="icon-btn" id="editClose" type="button" aria-label="Cerrar"><i data-lucide="x"></i></button>
+      </div>
+      <label class="field-label" for="eName">Nombre del emprendimiento</label>
+      <input class="input" id="eName" maxlength="40">
+      <label class="field-label" for="eCat">Categoría</label>
+      <select class="select" id="eCat"></select>
+      <label class="field-label" for="eRole">¿Qué eres?</label>
+      <select class="select" id="eRole">
+        <option>Negocio local</option><option>Creador de contenido</option><option>Freelance / Profesional</option>
+        <option>Artesano/a</option><option>Empresa</option><option>Otro</option>
+      </select>
+      <label class="field-label" for="eBio">Descripción corta</label>
+      <textarea id="eBio" rows="3" maxlength="160"></textarea>
+      <label class="field-label" for="eCountry">País</label>
+      <input class="input" id="eCountry" list="dlCountries" maxlength="60" autocomplete="off" placeholder="Elige de la lista o escribe el tuyo">
+      <label class="field-label" for="eState">Estado o región <span class="muted">(opcional)</span></label>
+      <input class="input" id="eState" list="dlStates" maxlength="60" autocomplete="off" placeholder="Ej. Jalisco">
+      <label class="field-label" for="eMuni">Ciudad o municipio</label>
+      <input class="input" id="eMuni" list="dlCities" maxlength="60" autocomplete="off" placeholder="Ej. Zapopan">
+      <label class="field-label" for="eColonia">Colonia o zona</label>
+      <input class="input" id="eColonia" maxlength="60">
+      <label class="field-label" for="eAvatar">Enlace de tu foto de perfil</label>
+      <input class="input" id="eAvatar" type="url" inputmode="url" autocapitalize="none" autocomplete="off" placeholder="https://…">
+      <label class="field-label" for="eCover">Enlace de tu portada</label>
+      <input class="input" id="eCover" type="url" inputmode="url" autocapitalize="none" autocomplete="off" placeholder="https://…">
+      <p class="form-error" id="editError" role="alert" hidden></p>
+      <button class="btn btn-primary btn-block" id="editSave" type="button">Guardar cambios</button>
+    </div>
+  </div>
+
+  <!-- Panel inferior para reportar una conversación -->
+  <div class="sheet-backdrop" id="reportSheet" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="reportTitle">
+      <div class="sheet-head">
+        <h2 id="reportTitle">Reportar a esta persona</h2>
+        <button class="icon-btn" id="reportClose" type="button" aria-label="Cerrar"><i data-lucide="x"></i></button>
+      </div>
+      <p class="page-sub">Nuestro equipo revisará el reporte. La otra persona no sabrá que lo enviaste.</p>
+      <label class="field-label" for="rpReason">Motivo</label>
+      <select class="select" id="rpReason">
+        <option>Spam o publicidad no deseada</option>
+        <option>Acoso o mensajes ofensivos</option>
+        <option>Contenido inapropiado</option>
+        <option>Suplantación o perfil falso</option>
+        <option>Otro motivo</option>
+      </select>
+      <label class="field-label" for="rpDetails">Detalles <span class="muted">(opcional)</span></label>
+      <textarea id="rpDetails" rows="3" maxlength="300" placeholder="Cuéntanos qué pasó"></textarea>
+      <p class="form-error" id="reportError" role="alert" hidden></p>
+      <button class="btn btn-primary btn-block" id="rpSend" type="button">Enviar reporte</button>
+    </div>
+  </div>
+
+  <!-- Panel inferior para crear comunidad o grupo -->
+  <div class="sheet-backdrop" id="commSheet" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="commTitle">
+      <div class="sheet-head">
+        <h2 id="commTitle">Crear comunidad o grupo</h2>
+        <button class="icon-btn" id="commClose" type="button" aria-label="Cerrar"><i data-lucide="x"></i></button>
+      </div>
+      <p class="page-sub">Tú serás quien lo administre. Elige un nombre claro y una descripción que diga para qué sirve.</p>
+      <label class="field-label" for="cKind">Tipo</label>
+      <select class="select" id="cKind">
+        <option value="sector">Comunidad de sector</option>
+        <option value="ciudad">Comunidad de ciudad</option>
+        <option value="grupo">Grupo de colaboración</option>
+      </select>
+      <label class="field-label" for="cTag">Sector, ciudad o tema</label>
+      <select class="select" id="cTag"></select>
+      <label class="field-label" for="cName">Nombre</label>
+      <input class="input" id="cName" maxlength="50" placeholder="Ej. Repostería de Tonalá">
+      <label class="field-label" for="cDesc">Descripción</label>
+      <textarea id="cDesc" rows="3" maxlength="200" placeholder="¿Para qué es este espacio y quién puede unirse?"></textarea>
+      <p class="form-error" id="commError" role="alert" hidden></p>
+      <button class="btn btn-primary btn-block" id="commSave" type="button"><i data-lucide="plus"></i> Crear</button>
+    </div>
+  </div>
+
+  <!-- Panel inferior para editar redes -->
+  <div class="sheet-backdrop" id="sheet" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+      <div class="sheet-head">
+        <h2 id="sheetTitle">Tus redes y contacto</h2>
+        <button class="icon-btn" id="sheetClose" type="button" aria-label="Cerrar"><i data-lucide="x"></i></button>
+      </div>
+      <p class="page-sub">Elige las redes que quieres mostrar. Así te contactan rápido otros emprendedores.</p>
+      <div id="sheetSocials"></div>
+      <p class="form-error" id="sheetError" role="alert" hidden></p>
+      <button class="btn btn-primary btn-block" id="sheetSave" type="button">Guardar redes</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</div>
+
+<script src="https://unpkg.com/lucide@latest"></script>
+<script>
+  /* Red de seguridad: si la app no arranca, avisa en vez de quedarse en el logo. */
+  (function () {
+    var firstError = '';
+    window.addEventListener('error', function (e) { if (!firstError) firstError = e.message || 'Error al cargar un archivo'; });
+    setTimeout(function () {
+      if (window.__bvReady) return;
+      var s = document.getElementById('splash');
+      if (!s) return;
+      var p = s.querySelector('p');
+      p.style.animation = 'none'; p.style.maxWidth = '300px'; p.style.color = 'inherit'; p.style.lineHeight = '1.5';
+      p.innerHTML = '<strong>No pudimos iniciar la aplicación.</strong><br>Ábrela con Live Server (http://localhost:5500), no con doble clic, y revisa tu conexión a internet.<br><small>Abre la consola del navegador (F12) para ver el detalle.' + (firstError ? '<br>Detalle: ' + firstError.replace(/</g, '&lt;') : '') + '</small>';
+    }, 7000);
+  })();
+</script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
