@@ -148,7 +148,7 @@
         <input class="input" id="rMuni" list="dlCities" maxlength="60" autocomplete="off" placeholder="Ej. Zapopan">
         <label class="field-label" for="rColonia">Colonia o zona <span class="muted">(opcional)</span></label>
         <input class="input" id="rColonia" maxlength="60" placeholder="Ej. Colonia Americana">
-        <small class="muted">Las fotos son opcionales: puedes agregarlas después desde "Editar perfil". Pega el enlace de una imagen de internet (no hace falta que termine en .jpg). También sirven enlaces de Google Drive, Dropbox e Imgur.</small>
+        <small class="muted">Las fotos son opcionales: puedes agregarlas después desde "Editar perfil". Pega cualquier enlace: de una imagen, de una página o de Google. Buscamos la foto por ti.</small>
       </fieldset>
 
       <p class="form-error" id="regError" role="alert" hidden></p>
@@ -227,7 +227,7 @@
     </section>
 
     <footer class="land-foot">
-      <p>© <span id="year"></span> BRIVIAN · Un proyecto de Krom Digital</p>
+      <p>© <span id="year"></span> BRIVIAN · Un proyecto de Chrome Digital</p>
     </footer>
   </div>
 
@@ -338,6 +338,7 @@
           <input class="input" id="postTags" placeholder="taller, cerámica, Tonalá">
           <label class="field-label" for="postImgUrl">Foto <span class="muted">(opcional: pega el enlace de una imagen)</span></label>
           <input class="input" id="postImgUrl" type="url" inputmode="url" autocapitalize="none" autocomplete="off" placeholder="https://…">
+          <small class="img-status" id="postImgStatus" role="status" aria-live="polite"></small>
           <img id="preview" class="preview" alt="" hidden referrerpolicy="no-referrer">
           <button class="btn btn-primary btn-block" id="publishBtn" type="submit" disabled><i data-lucide="send"></i> Publicar</button>
         </form>

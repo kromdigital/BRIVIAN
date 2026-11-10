@@ -78,33 +78,74 @@ function checkImage(url, ms = 8000) {
     img.src = url;
   });
 }
-const IMG_HELP = 'No pudimos cargar esa imagen. Sirve cualquier enlace que sea la imagen en sí (no hace falta que termine en .jpg). Si es de una página, mantén presionada la imagen y elige "Copiar dirección de imagen"; los enlaces de Google Imágenes, Instagram o Pinterest no funcionan. También aceptamos enlaces de Google Drive (compartido con cualquiera que tenga el enlace), Dropbox e Imgur.';
-/* Al escribir un enlace muestra al instante si carga bien (y la vista previa, si hay) */
+const IMG_HELP = 'No encontramos ninguna imagen en ese enlace. Prueba con otro enlace, o con el de la imagen misma (mantén presionada la imagen y elige "Copiar dirección de imagen").';
+
+/* Busca una imagen que se pueda mostrar a partir de CUALQUIER enlace, en este orden:
+   1) el enlace tal cual (incluye Google Imágenes, Drive, Dropbox, Imgur y http://)
+   2) el mismo enlace a través de un proxy de imágenes gratuito (para webs que bloquean que otros muestren sus fotos)
+   3) la imagen principal de la página (la que se ve al compartir el enlace en WhatsApp o Facebook)
+   Devuelve { url, via } o { url: '' } si no se encontró nada. */
+const PROXY = (u) => `https://images.weserv.nl/?url=${encodeURIComponent(u)}&w=800&we`;
+async function pageImage(u) {
+  try {
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 9000);
+    const r = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(u)}`, { signal: ctl.signal, referrerPolicy: 'no-referrer' });
+    clearTimeout(t);
+    const d = ((await r.json()) || {}).data || {};
+    return cleanUrl((d.image && d.image.url) || (d.logo && d.logo.url) || '');
+  } catch { return ''; }
+}
+const resolveCache = new Map();
+function resolveImage(raw) {
+  const key = String(raw || '').trim();
+  if (!key) return Promise.resolve({ url: '', via: '' });
+  if (!resolveCache.has(key)) {
+    const p = doResolve(key);
+    resolveCache.set(key, p);
+    p.then((r) => { if (!r.url) resolveCache.delete(key); });
+  }
+  return resolveCache.get(key);
+}
+async function doResolve(key) {
+  let u = imgUrl(key);
+  if (!u) return { url: '', via: '', invalid: true };
+  try {   // enlace de Google Imágenes: trae la imagen real en "imgurl"
+    const g = new URL(u);
+    if (/(^|\.)google\./.test(g.hostname) && g.searchParams.get('imgurl')) u = imgUrl(g.searchParams.get('imgurl')) || u;
+  } catch { /* sigue con el enlace original */ }
+  const direct = await checkImage(u, 6000);
+  if (direct === 'ok') return { url: u, via: 'direct' };
+  if (direct === 'timeout') return { url: u, via: 'slow' };
+  const [proxied, page] = await Promise.all([checkImage(PROXY(u), 9000), pageImage(u)]);
+  if (proxied === 'ok') return { url: PROXY(u), via: 'proxy' };
+  if (page) {
+    if ((await checkImage(page, 6000)) === 'ok') return { url: page, via: 'page' };
+    if ((await checkImage(PROXY(page), 9000)) === 'ok') return { url: PROXY(page), via: 'page' };
+  }
+  return { url: '', via: '' };
+}
+const IMG_OK = { direct: '✓ Imagen lista', proxy: '✓ Imagen lista (la ajustamos para que se vea bien)', page: '✓ Usamos la imagen principal de esa página', slow: 'La imagen tarda en cargar; se guardará de todos modos.' };
+/* Al escribir un enlace muestra al instante si funciona (y la vista previa, si hay) */
 function watchImageInput(input, status, onUrl) {
   let seq = 0, timer;
   const run = async () => {
     const my = ++seq, raw = input.value.trim();
     status.className = 'img-status';
     if (!raw) { status.textContent = ''; onUrl && onUrl(''); return; }
-    const u = imgUrl(raw);
-    if (!u) { status.textContent = 'Pega un enlace de internet (https://…).'; status.classList.add('bad'); onUrl && onUrl(''); return; }
-    status.textContent = 'Cargando imagen…';
-    const r = await checkImage(u);
+    status.textContent = 'Buscando la imagen…';
+    const r = await resolveImage(raw);
     if (my !== seq) return;
-    if (r === 'ok') { status.textContent = '✓ Imagen lista'; status.classList.add('ok'); onUrl && onUrl(u); }
-    else if (r === 'error') { status.textContent = IMG_HELP; status.classList.add('bad'); onUrl && onUrl(''); }
-    else { status.textContent = 'La imagen tarda en cargar; se guardará de todos modos.'; onUrl && onUrl(u); }
+    if (r.url) { status.textContent = IMG_OK[r.via] || IMG_OK.direct; status.classList.add('ok'); onUrl && onUrl(r.url); }
+    else { status.textContent = r.invalid ? 'Pega un enlace de internet (https://…).' : IMG_HELP; status.classList.add('bad'); onUrl && onUrl(''); }
   };
   input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(run, 450); });
   return { run, clear() { seq++; clearTimeout(timer); status.textContent = ''; status.className = 'img-status'; } };
 }
 /* Para validar al guardar: devuelve un mensaje de error o '' */
 async function imageProblem(raw, label) {
-  const v = String(raw || '').trim();
-  if (!v) return '';
-  const u = imgUrl(v);
-  if (!u) return `El enlace de ${label} no es válido. Pega un enlace de internet (https://…).`;
-  return (await checkImage(u)) === 'error' ? `${IMG_HELP} (${label})` : '';
+  if (!String(raw || '').trim()) return '';
+  const r = await resolveImage(raw);
+  return r.url ? '' : `${r.invalid ? 'Pega un enlace de internet (https://…).' : IMG_HELP} (${label})`;
 }
 
 const toMs = (ts) => (ts && typeof ts.toMillis === 'function' ? ts.toMillis() : ts instanceof Date ? ts.getTime() : Date.now());
@@ -666,8 +707,7 @@ $('#postBody').addEventListener('input', (e) => {
   $('#counter').textContent = `${e.target.value.length} / 500`;
   $('#publishBtn').disabled = e.target.value.trim().length < 3;
 });
-$('#postImgUrl').addEventListener('input', (e) => {
-  const u = imgUrl(e.target.value);
+watchImageInput($('#postImgUrl'), $('#postImgStatus'), (u) => {
   const img = $('#preview');
   if (u) { img.hidden = false; img.src = u; } else { img.hidden = true; img.removeAttribute('src'); }
 });
@@ -676,8 +716,8 @@ $('#postForm').addEventListener('submit', async (e) => {
   const body = $('#postBody').value.trim();
   if (body.length < 3) return;
   const rawImg = $('#postImgUrl').value.trim();
-  const imageUrl = imgUrl(rawImg);
-  if (rawImg && !imageUrl) { toast('El enlace de la foto no es válido.'); return; }
+  const imageUrl = (await resolveImage(rawImg)).url;
+  if (rawImg && !imageUrl) { $('#postImgStatus').textContent = IMG_HELP; $('#postImgStatus').className = 'img-status bad'; toast('No encontramos la imagen de ese enlace.'); return; }
   const tags = $('#postTags').value.split(',').map((t) => t.trim().replace(/^#/, '').slice(0, 30)).filter(Boolean).slice(0, 5);
   const post = {
     authorUid: ME.uid, handle: ME.handle, name: ME.name, avatar: cleanUrl(ME.avatar),
@@ -992,7 +1032,7 @@ async function sendCmMessage() {
   ctx.sending = true; $('#cmSend').disabled = true;
   try {
     await addDoc(collection(db, 'communities', ctx.id, 'messages'), {
-      senderUid: ME.uid, senderName: ME.name, senderAvatar: cleanUrl(ME.avatar) || '', text, createdAt: serverTimestamp(),
+      senderUid: ME.uid, senderName: ME.name, senderAvatar: (cleanUrl(ME.avatar) || '').length <= 500 ? (cleanUrl(ME.avatar) || '') : '', text, createdAt: serverTimestamp(),
     });
     input.value = ''; input.style.height = ''; ctx.first = true;
   } catch (e) {
@@ -1439,7 +1479,7 @@ $('#editSave').addEventListener('click', async () => {
   const fail = (m) => { err.textContent = m; err.hidden = false; };
   const name = $('#eName').value.trim();
   if (name.length < 2) return fail('Escribe el nombre de tu emprendimiento.');
-  const avatar = imgUrl($('#eAvatar').value), cover = imgUrl($('#eCover').value);
+  const avatar = (await resolveImage($('#eAvatar').value)).url, cover = (await resolveImage($('#eCover').value)).url;
   const place = readPlace('e');
   const pErr = placeError(place); if (pErr) return fail(pErr);
   const btn = $('#editSave'); btn.disabled = true;
@@ -1830,7 +1870,7 @@ const REG = { step: 1, handleTouched: false, social: createSocialEditor($('#regS
 const slug = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 20);
 
 function previewPick(box, url) {
-  const u = imgUrl(url);
+  const u = cleanUrl(url);
   box.style.backgroundImage = u ? cssUrl(u) : '';
   box.classList.toggle('has-img', !!u);
 }
@@ -1899,12 +1939,13 @@ $('#regForm').addEventListener('submit', async (e) => {
     const email = $('#rEmail').value.trim().toLowerCase();
     const handle = $('#rHandle').value.trim().toLowerCase();
     const place = readPlace('r');
+    const avatarUrl = (await resolveImage($('#rAvatarUrl').value)).url, coverUrl = (await resolveImage($('#rCoverUrl').value)).url;
     const profile = {
       name: $('#rName').value.trim(), handle,
       category: $('#rCat').value, role: $('#rRole').value, bio: $('#rBio').value.trim(),
       ...place,
       since: new Date().getFullYear(),
-      avatar: imgUrl($('#rAvatarUrl').value), cover: imgUrl($('#rCoverUrl').value),
+      avatar: avatarUrl, cover: coverUrl,
       socials: REG.social.validate().values, followersCount: 0,
     };
 
