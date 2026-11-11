@@ -320,7 +320,7 @@ textarea { resize: vertical; min-height: 120px; }
 
 /* ============ Perfil ============ */
 .profile { padding: 0; overflow: hidden; }
-.cover { height: 160px; background-image: var(--img, none), linear-gradient(135deg, #e9d8bf, #b98c5e 60%, #6e4a2c); display: flex; justify-content: space-between; align-items: flex-start; padding: 12px; background-size: cover; background-position: center; }
+.cover { height: 160px; background-image: var(--img, none), linear-gradient(135deg, var(--c1, #1B4F9C), var(--c2, #F0694F)); display: flex; justify-content: space-between; align-items: flex-start; padding: 12px; background-size: cover; background-position: center; }
 .cover-right { display: flex; gap: 8px; }
 .profile-body { padding: 0 16px 18px; }
 .profile-row { display: flex; justify-content: space-between; align-items: flex-end; }

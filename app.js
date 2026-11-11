@@ -1445,6 +1445,7 @@ function renderUser() {
   av.style.setProperty('--c1', c1); av.style.setProperty('--c2', c2); av.classList.remove('loaded');
   av.innerHTML = esc(initials(u.name)) + avatarImg(cleanUrl(u.avatar));
   const cover = cleanUrl(u.cover);
+  $('#uCover').style.setProperty('--c1', c1); $('#uCover').style.setProperty('--c2', c2);
   $('#uCover').style.setProperty('--img', cover ? cssUrl(cover) : 'none');
   $('#uName').textContent = u.name || 'Emprendedor';
   $('#uCat').textContent = u.category || ''; $('#uCat').hidden = !u.category;
@@ -1516,6 +1517,8 @@ function renderProfile() {
   $('#pBio').textContent = ME.bio || '';
   $('#pBio').hidden = !ME.bio;
   const cover = cleanUrl(ME.cover);
+  const [cc1, cc2] = colorsFor(ME.name);   // sin portada: fondo con los mismos colores del nombre que la foto de perfil
+  $('#cover').style.setProperty('--c1', cc1); $('#cover').style.setProperty('--c2', cc2);
   $('#cover').style.setProperty('--img', cover ? cssUrl(cover) : 'none');
   $('#stFollowers').textContent = Math.max(0, ME.followersCount || 0);
   $('#stFollowing').textContent = state.following.size;
