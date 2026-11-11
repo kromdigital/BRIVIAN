@@ -113,10 +113,17 @@ async function doResolve(key) {
     const g = new URL(u);
     if (/(^|\.)google\./.test(g.hostname) && g.searchParams.get('imgurl')) u = imgUrl(g.searchParams.get('imgurl')) || u;
   } catch { /* sigue con el enlace original */ }
-  const direct = await checkImage(u, 6000);
-  if (direct === 'ok') return { url: u, via: 'direct' };
+  /* Se prueba en paralelo "desde tu navegador" y "desde un servidor sin sesión".
+     Si solo carga en tu navegador, la imagen es privada (por ejemplo, un archivo de Drive sin compartir):
+     a ti se te ve porque tienes la sesión iniciada, pero las demás personas no la verían. */
+  const [direct, viaServer] = await Promise.all([checkImage(u, 6000), checkImage(PROXY(u), 9000)]);
+  if (direct === 'ok') {
+    if (viaServer === 'error' && NEEDS_LOGIN.test(new URL(u).hostname)) return { url: '', via: '', private: true };
+    return { url: u, via: 'direct' };
+  }
   if (direct === 'timeout') return { url: u, via: 'slow' };
-  const [proxied, page] = await Promise.all([checkImage(PROXY(u), 9000), pageImage(u)]);
+  const proxied = viaServer;
+  const page = await pageImage(u);
   if (proxied === 'ok') return { url: PROXY(u), via: 'proxy' };
   if (page) {
     if ((await checkImage(page, 6000)) === 'ok') return { url: page, via: 'page' };
@@ -124,6 +131,8 @@ async function doResolve(key) {
   }
   return { url: '', via: '' };
 }
+const NEEDS_LOGIN = /(^|\.)(drive\.google\.com|googleusercontent\.com|photos\.google\.com|facebook\.com|fbcdn\.net|instagram\.com|cdninstagram\.com|dropbox\.com|dropboxusercontent\.com|onedrive\.live\.com|1drv\.ms|sharepoint\.com|icloud\.com)$/;
+const IMG_PRIVATE = 'Esa imagen es privada: tú la ves porque tienes la sesión iniciada, pero las demás personas no. Compártela como "cualquier persona con el enlace" (o hazla pública) y pega el enlace otra vez, o usa otro enlace.';
 const IMG_OK = { direct: '✓ Imagen lista', proxy: '✓ Imagen lista (la ajustamos para que se vea bien)', page: '✓ Usamos la imagen principal de esa página', slow: 'La imagen tarda en cargar; se guardará de todos modos.' };
 /* Al escribir un enlace muestra al instante si funciona (y la vista previa, si hay) */
 function watchImageInput(input, status, onUrl) {
@@ -136,7 +145,7 @@ function watchImageInput(input, status, onUrl) {
     const r = await resolveImage(raw);
     if (my !== seq) return;
     if (r.url) { status.textContent = IMG_OK[r.via] || IMG_OK.direct; status.classList.add('ok'); onUrl && onUrl(r.url); }
-    else { status.textContent = r.invalid ? 'Pega un enlace de internet (https://…).' : IMG_HELP; status.classList.add('bad'); onUrl && onUrl(''); }
+    else { status.textContent = r.invalid ? 'Pega un enlace de internet (https://…).' : r.private ? IMG_PRIVATE : IMG_HELP; status.classList.add('bad'); onUrl && onUrl(''); }
   };
   input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(run, 450); });
   return { run, clear() { seq++; clearTimeout(timer); status.textContent = ''; status.className = 'img-status'; } };
@@ -145,7 +154,7 @@ function watchImageInput(input, status, onUrl) {
 async function imageProblem(raw, label) {
   if (!String(raw || '').trim()) return '';
   const r = await resolveImage(raw);
-  return r.url ? '' : `${r.invalid ? 'Pega un enlace de internet (https://…).' : IMG_HELP} (${label})`;
+  return r.url ? '' : `${r.invalid ? 'Pega un enlace de internet (https://…).' : r.private ? IMG_PRIVATE : IMG_HELP} (${label})`;
 }
 
 const toMs = (ts) => (ts && typeof ts.toMillis === 'function' ? ts.toMillis() : ts instanceof Date ? ts.getTime() : Date.now());
