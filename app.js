@@ -281,7 +281,22 @@ const resetData = () => {
 };
 /* Chat: bandeja en tiempo real + conversación abierta */
 const chat = { list: [], ready: false, unsub: null, uid: null, ctx: null, warned: false };
+let uview = null;   // perfil de otra persona que se está viendo
 const fresh = (t) => t && Date.now() - t < 60000;
+
+/* Caché de perfiles: nombre y fotos siempre al día aunque la publicación o el chat guardaran una copia vieja */
+const uCache = new Map();
+const cacheUsers = (list) => list.forEach((u) => u.uid && uCache.set(u.uid, { ...u, _t: Date.now() }));
+const liveUser = (uid, fallback = {}) => (ME && uid === ME.uid ? ME : uCache.get(uid)) || fallback;
+async function ensureUsers(uids) {
+  const miss = [...new Set(uids)].filter((u) => u && !(ME && u === ME.uid) && !(uCache.get(u) && Date.now() - uCache.get(u)._t < 300000)).slice(0, 30);
+  if (!miss.length) return false;
+  let changed = false;
+  await Promise.all(miss.map((uid) => getDoc(doc(db, 'users', uid)).then((s) => {
+    if (s.exists()) { uCache.set(uid, { uid, ...s.data(), _t: Date.now() }); changed = true; }
+  }).catch(() => {})));
+  return changed;
+}
 
 /* ---------- Sesión ---------- */
 let sessionTask = null;
@@ -292,7 +307,7 @@ const authReadyPromise = new Promise((r) => { resolveAuthReady = r; });
 const isLoggedIn = () => !!ME;
 
 function clearSession() {
-  resetChat(); leaveCommunity();
+  resetChat(); leaveCommunity(); uCache.clear(); uview = null;
   ME = null; IS_ADMIN = false; sessionTask = null;
   ['following', 'liked', 'saved', 'joined', 'blocked'].forEach((k) => (state[k] = new Set()));
   state.msgTab = 'chats';
@@ -318,7 +333,7 @@ async function loadSession(user, force = false) {
 }
 
 /* ---------- Router ---------- */
-const APP_VIEWS = ['inicio', 'explorar', 'crear', 'comunidad', 'perfil', 'mensajes', 'chat'];
+const APP_VIEWS = ['inicio', 'explorar', 'crear', 'comunidad', 'perfil', 'mensajes', 'chat', 'u'];
 const AUTH_VIEWS = ['login', 'registro'];
 function route() {
   if (!authReady) return;
@@ -336,17 +351,18 @@ function route() {
   const inComm = v === 'comunidad' && !!arg;
   if (v !== 'chat') leaveChat();
   if (!inComm) leaveCommunity();
+  if (v !== 'u') uview = null;
   $('#app').classList.toggle('in-chat', v === 'chat' || inComm);
 
   if (isApp) {
-    $$('.view').forEach((s) => (s.hidden = s.id !== `view-${inComm ? 'comm' : v}`));
+    $$('.view').forEach((s) => (s.hidden = s.id !== `view-${inComm ? 'comm' : v === 'u' ? 'user' : v}`));
     $$('.bottom-nav a').forEach((a) => {
       const on = a.dataset.view === v;
       a.classList.toggle('active', on);
       if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
     applyMe();
-    ({ inicio: showInicio, explorar: showExplorar, crear: renderTypeChips, comunidad: () => (inComm ? showCommunity(arg) : showComunidad()), perfil: showPerfil, mensajes: showMensajes, chat: () => showChat(arg) }[v])();
+    ({ inicio: showInicio, explorar: showExplorar, crear: renderTypeChips, comunidad: () => (inComm ? showCommunity(arg) : showComunidad()), perfil: showPerfil, mensajes: showMensajes, chat: () => showChat(arg), u: () => showUser(arg) }[v])();
     if (v !== 'chat' && !inComm) window.scrollTo(0, 0);
   } else if (isAuth) {
     window.scrollTo(0, 0);
@@ -464,11 +480,12 @@ function postHTML(p) {
   const mine = ME && p.authorUid === ME.uid;
   const img = cleanUrl(p.imageUrl);
   const tags = (p.tags || []).slice(0, 5);
+  const a = liveUser(p.authorUid, p);
   return `<article class="card post" data-id="${esc(p.id)}" data-author="${esc(p.authorUid)}">
-    <div class="post-head">
-      ${avatarHTML(p.name, 'md', p.avatar)}
+    <div class="post-head" data-user="${esc(p.authorUid)}">
+      ${avatarHTML(a.name || p.name, 'md', a.avatar)}
       <div class="post-who">
-        <strong>${esc(p.name)}</strong><span class="badge t-${esc(p.type)}">${esc(p.type)}</span>
+        <strong>${esc(a.name || p.name)}</strong><span class="badge t-${esc(p.type)}">${esc(p.type)}</span>
         <div class="post-sub">@${esc(p.handle)} · <span class="cat">${esc(p.cat)}</span> · ${esc(placeFor(p))} · ${timeAgo(p.createdAt)}</div>
       </div>
       ${mine ? '' : `<button class="btn btn-sm ${follow ? 'btn-soft' : 'btn-outline'}" data-act="follow">${follow ? 'Siguiendo' : 'Seguir'}</button>`}
@@ -527,6 +544,7 @@ async function loadFeed(reset = false) {
   }
   data.feedLoading = false;
   renderFeed();
+  ensureUsers(data.feed.map((p) => p.authorUid)).then((ch) => { if (ch && !$('#view-inicio').hidden) renderFeed(); });
 }
 function showInicio() {
   if (!fresh(data.feedAt)) loadFeed(true); else renderFeed();
@@ -545,7 +563,7 @@ $('.composer-chips').addEventListener('click', (e) => {
 
 /* --- Acciones sobre publicaciones (like, guardar, seguir, eliminar) --- */
 const forPost = (id, fn) => [...data.feed, ...data.mine].filter((x) => x.id === id).forEach(fn);
-const findPost = (id) => data.feed.find((x) => x.id === id) || data.mine.find((x) => x.id === id);
+const findPost = (id) => data.feed.find((x) => x.id === id) || data.mine.find((x) => x.id === id) || (uview && uview.posts.find((x) => x.id === id));
 
 async function toggleLike(p) {
   const liked = state.liked.has(p.id);
@@ -620,6 +638,7 @@ async function loadPeople(force = false) {
   try {
     const snap = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(100)));
     data.people = snap.docs.map((d) => ({ uid: d.id, ...d.data() }));
+    cacheUsers(data.people);
     data.peopleAt = Date.now();
     fillLocFilter();
   } catch (e) { console.error(e); data.peopleError = true; toast(authError(e)); }
@@ -664,7 +683,7 @@ function renderResults() {
     ? list.map((b) => {
         const f = state.following.has(b.uid), me = b.uid === ME.uid;
         const isNew = toMs(b.createdAt) > monthAgo;
-        return `<article class="card biz" data-uid="${esc(b.uid)}">
+        return `<article class="card biz" data-uid="${esc(b.uid)}" data-user="${esc(b.uid)}">
           ${avatarHTML(b.name, 'md', b.avatar)}
           <div class="biz-info"><strong>${esc(b.name)}</strong> ${isNew ? '<span class="badge">Nuevo</span>' : ''}${me ? ' <span class="badge neutral">Tú</span>' : ''}
             <p>${esc(b.bio || b.role || '')}</p><small>${esc(b.category)} · ${esc(placeText(b))}</small>${quickLinks(b.socials)}</div>
@@ -1197,10 +1216,11 @@ function renderCmMembers() {
   if (ctx.membersLoading) { box.innerHTML = '<div class="loading">Cargando miembros…</div>'; return; }
   if (ctx.membersError) { box.innerHTML = '<div class="empty">No pudimos cargar los miembros.<br><button class="btn btn-outline" data-retry-members>Reintentar</button></div>'; return; }
   if (!ctx.members || !ctx.members.length) { box.innerHTML = '<div class="empty">Aún no hay miembros.</div>'; return; }
+  ensureUsers(ctx.members.map((m) => m.uid)).then((ch) => { if (ch && cm === ctx && ctx.tab === 'miembros') renderCmMembers(); });
   box.innerHTML = ctx.members.map((m) => {
-    const me = m.uid === ME.uid, f = state.following.has(m.uid), name = m.name || 'Miembro';
-    return `<article class="card cm-member" data-uid="${esc(m.uid)}">
-      ${avatarHTML(name, 'md', m.avatar)}
+    const me = m.uid === ME.uid, f = state.following.has(m.uid), lv = liveUser(m.uid, m), name = lv.name || m.name || 'Miembro';
+    return `<article class="card cm-member" data-uid="${esc(m.uid)}" data-user="${esc(m.uid)}">
+      ${avatarHTML(name, 'md', lv.avatar)}
       <div class="biz-info"><strong>${esc(name)}</strong>${m.uid === ctx.c.ownerUid ? ' <span class="badge">Admin</span>' : ''}${me ? ' <span class="badge neutral">Tú</span>' : ''}
         <p>${m.handle ? `@${esc(m.handle)}` : ''}</p>
         <small>${esc([m.category, placeText(m)].filter(Boolean).join(' · '))}</small>${quickLinks(m.socials)}</div>
@@ -1360,14 +1380,16 @@ function createSocialEditor(root) {
 }
 
 /* Botones de contacto del perfil */
-function renderProfileSocials() {
-  const s = ME.socials || {};
+function socialLinksHTML(s = {}, emptyMsg = '') {
   const items = SOCIALS.filter((n) => s[n.id]);
-  $('#pSocials').innerHTML = items.length
+  return items.length
     ? items.map((n) => `<a class="social-link ${n.id === 'whatsapp' ? 'wa' : ''}" href="${esc(socialHref(n.id, s[n.id]))}" target="_blank" rel="noopener noreferrer" style="--sc:${n.color}">
         <span class="social-ico"><i data-lucide="${n.icon}"></i></span>
         <span class="social-txt"><strong>${n.id === 'whatsapp' ? 'Escribir por WhatsApp' : n.name}</strong><small>${esc(socialLabel(n.id, s[n.id]))}</small></span></a>`).join('')
-    : '<p class="muted social-empty">Aún no agregas redes. Añádelas para que otros emprendedores te contacten rápido.</p>';
+    : `<p class="muted social-empty">${emptyMsg}</p>`;
+}
+function renderProfileSocials() {
+  $('#pSocials').innerHTML = socialLinksHTML(ME.socials || {}, 'Aún no agregas redes. Añádelas para que otros emprendedores te contacten rápido.');
 }
 /* Accesos rápidos (iconos) para las tarjetas de Explorar */
 function quickLinks(socials = {}) {
@@ -1376,6 +1398,84 @@ function quickLinks(socials = {}) {
   return `<div class="quick-links">${items.map((n) =>
     `<a class="quick" href="${esc(socialHref(n.id, socials[n.id]))}" target="_blank" rel="noopener noreferrer" aria-label="${esc(n.name)}" style="--sc:${n.color}"><i data-lucide="${n.icon}"></i></a>`).join('')}</div>`;
 }
+
+/* ============================================================
+   PERFIL DE OTRA PERSONA  (#u/<uid>)
+   ============================================================ */
+async function showUser(uid) {
+  if (!/^[A-Za-z0-9]{1,128}$/.test(uid)) { location.replace('#explorar'); return; }
+  if (uid === ME.uid) { location.replace('#perfil'); return; }
+  window.scrollTo(0, 0);
+  const cached = uCache.get(uid) || data.people.find((x) => x.uid === uid) || null;
+  const ctx = uview = { uid, u: cached, posts: [], loading: true };
+  renderUser();
+  try {
+    const s = await getDoc(doc(db, 'users', uid));
+    if (uview !== ctx) return;
+    if (!s.exists()) { toast('No encontramos este perfil'); location.replace('#explorar'); return; }
+    ctx.u = { uid, ...s.data() };
+    cacheUsers([ctx.u]);
+  } catch (e) { console.error(e); toast(authError(e)); if (!ctx.u) { location.replace('#explorar'); return; } }
+  renderUser();
+  try {
+    const snap = await getDocs(query(collection(db, 'posts'), where('authorUid', '==', uid), limit(30)));
+    ctx.posts = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt));
+  } catch (e) { console.error(e); ctx.postsError = true; }
+  ctx.loading = false;
+  if (uview === ctx) renderUser();
+}
+function renderUser() {
+  const ctx = uview; if (!ctx) return;
+  const u = ctx.u;
+  if (!u) {
+    $('#uName').textContent = 'Cargando…'; ['#uCat', '#uRole'].forEach((x) => ($(x).textContent = ''));
+    $('#uPosts').innerHTML = '<div class="loading">Cargando…</div>'; return;
+  }
+  const [c1, c2] = colorsFor(u.name);
+  const av = $('#uAvatar');
+  av.style.setProperty('--c1', c1); av.style.setProperty('--c2', c2); av.classList.remove('loaded');
+  av.innerHTML = esc(initials(u.name)) + avatarImg(cleanUrl(u.avatar));
+  const cover = cleanUrl(u.cover);
+  $('#uCover').style.setProperty('--img', cover ? cssUrl(cover) : 'none');
+  $('#uName').textContent = u.name || 'Emprendedor';
+  $('#uCat').textContent = u.category || ''; $('#uCat').hidden = !u.category;
+  $('#uRole').textContent = u.role || ''; $('#uRole').hidden = !u.role;
+  $('#uHandle').textContent = u.handle || '';
+  $('#uBio').textContent = u.bio || ''; $('#uBio').hidden = !u.bio;
+  $('#uCity').textContent = placeText(u) || 'México';
+  $('#uSince').textContent = u.since || '';
+  $('#uSocials').innerHTML = socialLinksHTML(u.socials || {}, `${esc(u.name || 'Esta persona')} aún no agrega redes. Escríbele por mensaje.`);
+  const f = state.following.has(ctx.uid);
+  const btn = $('#uFollow');
+  btn.textContent = f ? 'Siguiendo' : 'Seguir';
+  btn.className = `btn ${f ? 'btn-soft' : 'btn-primary'}`;
+  $('#uMsg').href = `#chat/${chatIdFor(ctx.uid)}`;
+  $('#uStFollowers').textContent = Math.max(0, u.followersCount || 0);
+  $('#uStPosts').textContent = ctx.posts.length;
+  $('#uPosts').innerHTML = ctx.loading && !ctx.posts.length ? '<div class="loading">Cargando publicaciones…</div>'
+    : ctx.postsError ? '<div class="empty">No pudimos cargar sus publicaciones.</div>'
+    : ctx.posts.length ? ctx.posts.map(postHTML).join('') : '<div class="empty">Aún no ha publicado.</div>';
+  icons();
+}
+$('#uBack').addEventListener('click', () => { if (history.length > 1) history.back(); else location.hash = 'explorar'; });
+$('#uFollow').addEventListener('click', async () => {
+  const ctx = uview; if (!ctx || !ctx.u) return;
+  const btn = $('#uFollow'); btn.disabled = true;
+  const on = state.following.has(ctx.uid);
+  try {
+    await toggleFollow(ctx.uid, ctx.u.name);
+    ctx.u.followersCount = Math.max(0, (ctx.u.followersCount || 0) + (on ? -1 : 1));
+  } catch (e) { console.error(e); toast(authError(e)); }
+  btn.disabled = false; renderUser();
+});
+$('#uPosts').addEventListener('click', (e) => onPostAction(e, renderUser));
+/* Tocar a una persona (tarjeta, publicación, miembro, chat) abre su perfil */
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-user]');
+  if (!el || !ME || e.target.closest('button, a, input, textarea, select, label')) return;
+  const uid = el.dataset.user;
+  if (uid) location.hash = uid === ME.uid ? 'perfil' : `u/${uid}`;
+});
 
 /* ============================================================
    PERFIL (+ paneles para editar redes y datos)
@@ -1520,7 +1620,9 @@ const msOr0 = (t) => (t ? toMs(t) : 0);
 const pinfo = (u) => ({ name: u.name || 'Emprendedor', handle: u.handle || '', avatar: cleanUrl(u.avatar) || '' });
 const otherOf = (c) => {
   const uid = (c.members || []).find((m) => m !== ME.uid) || '';
-  return { uid, ...((c.people || {})[uid] || { name: 'Emprendedor' }) };
+  const saved = (c.people || {})[uid] || { name: 'Emprendedor' };
+  const live = uCache.get(uid);
+  return { uid, ...saved, ...(live ? { name: live.name || saved.name, avatar: live.avatar || '' , handle: live.handle || saved.handle } : {}) };
 };
 /* Para quien envió la solicitud, "rechazada" se ve igual que "pendiente" */
 const isPendingForMe = (c) => c.status === 'pending' && c.requesterUid !== ME.uid;
@@ -1574,6 +1676,7 @@ function renderInbox() {
       : '<div class="empty">Aún no tienes conversaciones.<br>Entra a Explorar y escríbele a un emprendimiento.<br><a class="btn btn-primary" href="#explorar">Explorar</a></div>';
     icons(); return;
   }
+  ensureUsers(list.map((c) => otherOf(c).uid)).then((ch) => { if (ch && !$('#view-mensajes').hidden) renderInbox(); });
   box.innerHTML = list.map((c) => {
     const o = otherOf(c), unread = isUnread(c);
     const waiting = c.status !== 'accepted' && c.requesterUid === ME.uid;
@@ -1654,6 +1757,7 @@ const hourLabel = (ms) => new Date(ms).toLocaleTimeString('es-MX', { hour: '2-di
 function renderChat() {
   const ctx = chat.ctx; if (!ctx || !ctx.other) return;
   const o = ctx.other, c = ctx.chat;
+  $('#chatWho').dataset.user = o.uid;
   $('#chatWho').innerHTML = `${avatarHTML(o.name, 'sm', o.avatar)}<div style="min-width:0"><strong>${esc(o.name)}</strong>${o.handle ? `<small>@${esc(o.handle)}</small>` : ''}</div>`;
   const blocked = state.blocked.has(o.uid);
   $('#chatBlock').textContent = blocked ? 'Desbloquear' : 'Bloquear';
@@ -1728,7 +1832,7 @@ async function sendMessage() {
     ctx.first = true;
   } catch (e) {
     console.error(e);
-    toast(e && e.code === 'permission-denied' ? 'No pudimos enviar el mensaje. Es posible que esta persona no pueda recibirlo.' : authError(e));
+    toast(e && e.code === 'permission-denied' ? 'Firebase no permitió enviar este mensaje (permisos). Si pasa con todas las personas, falta publicar las reglas de Firestore más recientes.' : authError(e));
   }
   ctx.sending = false; $('#chatSend').disabled = false;
   if (chat.ctx === ctx) input.focus();

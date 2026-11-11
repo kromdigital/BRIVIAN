@@ -411,6 +411,40 @@
         <div id="chatList" class="list"></div>
       </section>
 
+      <!-- PERFIL DE OTRA PERSONA -->
+      <section class="view" id="view-user" hidden>
+        <div class="card profile">
+          <div class="cover" id="uCover">
+            <button class="icon-btn glass" id="uBack" type="button" aria-label="Volver"><i data-lucide="arrow-left"></i></button>
+          </div>
+          <div class="profile-body">
+            <div class="profile-row">
+              <span class="avatar xl" id="uAvatar"></span>
+              <div class="u-actions">
+                <button class="btn btn-primary" id="uFollow" type="button">Seguir</button>
+                <a class="btn btn-outline" id="uMsg" href="#mensajes"><i data-lucide="message-circle"></i> Mensaje</a>
+              </div>
+            </div>
+            <h2 class="profile-name"><span id="uName"></span> <span class="badge" id="uCat"></span></h2>
+            <span class="badge neutral" id="uRole"></span>
+            <p class="handle">@<span id="uHandle"></span></p>
+            <p class="bio" id="uBio" hidden></p>
+            <p class="meta"><i data-lucide="map-pin"></i> <span id="uCity"></span></p>
+            <p class="meta"><i data-lucide="calendar"></i> En BRIVIAN desde <span id="uSince"></span></p>
+            <div class="contact">
+              <div class="contact-head"><h3 class="contact-title">Contacto y redes</h3></div>
+              <div class="social-links" id="uSocials"></div>
+            </div>
+            <div class="stats" style="grid-template-columns:repeat(2,1fr)">
+              <div><strong id="uStPosts">0</strong><small>Publicaciones</small></div>
+              <div><strong id="uStFollowers">0</strong><small>Seguidores</small></div>
+            </div>
+          </div>
+        </div>
+        <h3 class="section-title">Publicaciones</h3>
+        <div id="uPosts" class="feed"></div>
+      </section>
+
       <!-- PÁGINA DE UNA COMUNIDAD -->
       <section class="view" id="view-comm" hidden>
         <div class="chat-head">

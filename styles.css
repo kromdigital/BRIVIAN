@@ -563,3 +563,7 @@ a.act { text-decoration: none; }
 .img-status.bad { color: #b42318; }
 [data-theme="dark"] .img-status.ok { color: #6ce9a6; }
 [data-theme="dark"] .img-status.bad { color: #ffb4a8; }
+
+/* ============ Perfil de otra persona ============ */
+.u-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+[data-user] { cursor: pointer; }
