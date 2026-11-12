@@ -298,7 +298,25 @@ const fresh = (t) => t && Date.now() - t < 60000;
 /* Caché de perfiles: nombre y fotos siempre al día aunque la publicación o el chat guardaran una copia vieja */
 const uCache = new Map();
 const cacheUsers = (list) => list.forEach((u) => u.uid && uCache.set(u.uid, { ...u, _t: Date.now() }));
+/* Palomita roja de cuenta verificada (correo confirmado). Se guarda en el perfil como verified:true
+   y las reglas de Firestore solo lo aceptan si el token de Firebase dice que el correo está verificado. */
+const VBADGE = '<span class="vbadge" role="img" aria-label="Cuenta verificada" title="Cuenta verificada"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 1.8l2.4 1.9 3-.3 1.2 2.8 2.8 1.2-.3 3L23 12l-1.9 2.4.3 3-2.8 1.2-1.2 2.8-3-.3L12 23l-2.4-1.9-3 .3-1.2-2.8-2.8-1.2.3-3L1 12l1.9-2.4-.3-3 2.8-1.2 1.2-2.8 3 .3z"/><path d="M8 12.3l2.7 2.7 5.6-5.6" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
+const vbadge = (u) => (u && u.verified === true ? VBADGE : '');
 const liveUser = (uid, fallback = {}) => (ME && uid === ME.uid ? ME : uCache.get(uid)) || fallback;
+/* Mantiene el perfil al día: verified:true solo si el correo de Firebase está verificado */
+async function syncVerified() {
+  const u = auth.currentUser;
+  if (!u || !ME || ME.uid !== u.uid) return;
+  try {
+    if (!u.emailVerified && !ME.verified) await u.reload();          // por si lo verificó desde otro dispositivo
+    const want = !!u.emailVerified;
+    if (!!ME.verified === want) return;
+    await u.getIdToken(true);                                         // las reglas leen el token: hay que renovarlo
+    await updateDoc(doc(db, 'users', ME.uid), { verified: want });
+    ME.verified = want;
+    if (!$('#view-perfil').hidden) renderProfile();
+  } catch (e) { console.debug('syncVerified', e && e.code); }
+}
 async function ensureUsers(uids) {
   const miss = [...new Set(uids)].filter((u) => u && !(ME && u === ME.uid) && !(uCache.get(u) && Date.now() - uCache.get(u)._t < 300000)).slice(0, 30);
   if (!miss.length) return false;
@@ -339,6 +357,7 @@ async function loadSession(user, force = false) {
     ME = { uid: user.uid, ...snap.data() };
     Object.assign(state, { following, liked, saved, joined, blocked });
     IS_ADMIN = admin;
+    setTimeout(syncVerified, 0);
     return true;
   })();
   sessionTask = { uid: user.uid, p };
@@ -499,7 +518,7 @@ function postHTML(p) {
     <div class="post-head" data-user="${esc(p.authorUid)}">
       ${avatarHTML(a.name || p.name, 'md', a.avatar)}
       <div class="post-who">
-        <strong>${esc(a.name || p.name)}</strong><span class="badge t-${esc(p.type)}">${esc(p.type)}</span>
+        <strong>${esc(a.name || p.name)}</strong>${vbadge(a)}<span class="badge t-${esc(p.type)}">${esc(p.type)}</span>
         <div class="post-sub">@${esc(p.handle)} · <span class="cat">${esc(p.cat)}</span> · ${esc(placeFor(p))} · ${timeAgo(p.createdAt)}</div>
       </div>
       ${mine ? '' : `<button class="btn btn-sm ${follow ? 'btn-soft' : 'btn-outline'}" data-act="follow">${follow ? 'Siguiendo' : 'Seguir'}</button>`}
@@ -720,7 +739,7 @@ function renderResults() {
         const isNew = toMs(b.createdAt) > monthAgo;
         return `<article class="card biz" data-uid="${esc(b.uid)}" data-user="${esc(b.uid)}">
           ${avatarHTML(b.name, 'md', b.avatar)}
-          <div class="biz-info"><strong>${esc(b.name)}</strong> ${isNew ? '<span class="badge">Nuevo</span>' : ''}${me ? ' <span class="badge neutral">Tú</span>' : ''}
+          <div class="biz-info"><strong>${esc(b.name)}</strong>${vbadge(b)} ${isNew ? '<span class="badge">Nuevo</span>' : ''}${me ? ' <span class="badge neutral">Tú</span>' : ''}
             <p>${esc(b.bio || b.role || '')}</p><small>${esc(b.category)} · ${esc(placeText(b))}</small>${quickLinks(b.socials)}</div>
           ${me ? '' : `<div class="biz-actions"><button class="btn btn-sm ${f ? 'btn-soft' : 'btn-outline'}" data-follow="${esc(b.uid)}">${f ? 'Siguiendo' : 'Seguir'}</button>
             <a class="btn btn-sm btn-outline" href="#chat/${esc(chatIdFor(b.uid))}" aria-label="Enviar mensaje a ${esc(b.name)}"><i data-lucide="message-circle"></i> Mensaje</a></div>`}</article>`;
@@ -1146,6 +1165,7 @@ async function loadCmPosts() {
   } catch (e) { console.error(e); ctx.postsError = true; toast(authError(e)); }
   ctx.postsLoading = false;
   if (cm === ctx) renderCmPosts();
+  ensureUsers((ctx.posts || []).map((p) => p.authorUid)).then((ch) => { if (ch && cm === ctx) renderCmPosts(); });
 }
 function renderCmPosts() {
   const ctx = cm; if (!ctx || ctx.tab !== 'apoyo') return;
@@ -1160,7 +1180,7 @@ function renderCmPosts() {
     const link = cleanUrl(p.link);
     return `<article class="card cm-post" data-id="${esc(p.id)}">
       <div class="post-head">${avatarHTML(p.authorName, 'md', p.authorAvatar)}
-        <div class="post-who"><strong>${esc(p.authorName)}</strong><div class="post-sub">@${esc(p.authorHandle || '')} · ${p.createdAt ? timeAgo(p.createdAt) : 'ahora'}</div></div></div>
+        <div class="post-who"><strong>${esc(p.authorName)}</strong>${vbadge(liveUser(p.authorUid))}<div class="post-sub">@${esc(p.authorHandle || '')} · ${p.createdAt ? timeAgo(p.createdAt) : 'ahora'}</div></div></div>
       <p class="post-body">${esc(p.body)}</p>
       ${link ? `<a class="cm-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer"><i data-lucide="external-link"></i> ${esc(link.replace(/^https:\/\//, '').slice(0, 60))}</a>` : ''}
       <div class="post-actions">
@@ -1259,7 +1279,7 @@ function renderCmMembers() {
     const me = m.uid === ME.uid, f = state.following.has(m.uid), lv = liveUser(m.uid, m), name = lv.name || m.name || 'Miembro';
     return `<article class="card cm-member" data-uid="${esc(m.uid)}" data-user="${esc(m.uid)}">
       ${avatarHTML(name, 'md', lv.avatar)}
-      <div class="biz-info"><strong>${esc(name)}</strong>${m.uid === ctx.c.ownerUid ? ' <span class="badge">Admin</span>' : ''}${me ? ' <span class="badge neutral">Tú</span>' : ''}
+      <div class="biz-info"><strong>${esc(name)}</strong>${vbadge(lv)}${m.uid === ctx.c.ownerUid ? ' <span class="badge">Admin</span>' : ''}${me ? ' <span class="badge neutral">Tú</span>' : ''}
         <p>${m.handle ? `@${esc(m.handle)}` : ''}</p>
         <small>${esc([m.category, placeText(m)].filter(Boolean).join(' · '))}</small>${quickLinks(m.socials)}</div>
       ${me ? '' : `<div class="biz-actions"><button class="btn btn-sm ${f ? 'btn-soft' : 'btn-outline'}" data-m-follow>${f ? 'Siguiendo' : 'Seguir'}</button>
@@ -1477,6 +1497,7 @@ function renderUser() {
   $('#uCover').style.setProperty('--c1', c1); $('#uCover').style.setProperty('--c2', c2);
   $('#uCover').style.setProperty('--img', cover ? cssUrl(cover) : 'none');
   $('#uName').textContent = u.name || 'Emprendedor';
+  $('#uVerified').innerHTML = vbadge(u);
   $('#uCat').textContent = u.category || ''; $('#uCat').hidden = !u.category;
   $('#uRole').textContent = u.role || ''; $('#uRole').hidden = !u.role;
   $('#uHandle').textContent = u.handle || '';
@@ -1544,6 +1565,7 @@ function renderProfile() {
   $('#pCity').textContent = ME.city || placeText(ME);
   $('#pSince').textContent = ME.since;
   $('#pMail').hidden = !(auth.currentUser && auth.currentUser.emailVerified);
+  $('#pVerified').innerHTML = vbadge(ME);
   $('#pBio').textContent = ME.bio || '';
   $('#pBio').hidden = !ME.bio;
   const cover = cleanUrl(ME.cover);
@@ -1659,12 +1681,12 @@ $('#shareBtn').addEventListener('click', async () => {
    ============================================================ */
 const chatIdFor = (otherUid) => [ME.uid, otherUid].sort().join('_');
 const msOr0 = (t) => (t ? toMs(t) : 0);
-const pinfo = (u) => ({ name: u.name || 'Emprendedor', handle: u.handle || '', avatar: cleanUrl(u.avatar) || '' });
+const pinfo = (u) => ({ name: u.name || 'Emprendedor', handle: u.handle || '', avatar: cleanUrl(u.avatar) || '', verified: u.verified === true });
 const otherOf = (c) => {
   const uid = (c.members || []).find((m) => m !== ME.uid) || '';
   const saved = (c.people || {})[uid] || { name: 'Emprendedor' };
   const live = uCache.get(uid);
-  return { uid, ...saved, ...(live ? { name: live.name || saved.name, avatar: live.avatar || '' , handle: live.handle || saved.handle } : {}) };
+  return { uid, ...saved, ...(live ? { name: live.name || saved.name, avatar: live.avatar || '' , handle: live.handle || saved.handle, verified: live.verified === true } : {}) };
 };
 /* Para quien envió la solicitud, "rechazada" se ve igual que "pendiente" */
 const isPendingForMe = (c) => c.status === 'pending' && c.requesterUid !== ME.uid;
@@ -1793,7 +1815,7 @@ function renderNotifs() {
     const where = n.targetName ? ` · <em>${esc(n.targetName)}</em>` : '';
     return `<a class="card chat-row ${isNew ? 'notif-new' : ''}" href="${esc(notifHref(n))}">
       <span class="notif-ic">${avatarHTML(name, 'md', lv.avatar || n.fromAvatar)}<span class="mini"><i data-lucide="${meta[0]}"></i></span></span>
-      <div class="chat-main"><div class="chat-top"><span class="notif-txt"><strong>${esc(name)}</strong> ${meta[1]}${where}</span><time>${n.at ? timeAgo(n.at) : ''}</time></div></div>
+      <div class="chat-main"><div class="chat-top"><span class="notif-txt"><strong>${esc(name)}</strong>${vbadge(lv)} ${meta[1]}${where}</span><time>${n.at ? timeAgo(n.at) : ''}</time></div></div>
       ${isNew ? '<span class="unread-dot" aria-label="Nueva"></span>' : ''}</a>`;
   }).join('');
   box.innerHTML = html || '<div class="empty">Todo al día. Aquí verás cuando alguien te siga, dé like o se una a tu comunidad.</div>';
@@ -1827,7 +1849,7 @@ function renderInbox() {
     return `<a class="card chat-row ${unread ? 'unread' : ''}" href="#chat/${esc(c.id)}">
       ${avatarHTML(o.name, 'md', o.avatar)}
       <div class="chat-main">
-        <div class="chat-top"><strong>${esc(o.name)}</strong><time>${c.lastAt ? timeAgo(c.lastAt) : ''}</time></div>
+        <div class="chat-top"><strong>${esc(o.name)}</strong>${vbadge(o)}<time>${c.lastAt ? timeAgo(c.lastAt) : ''}</time></div>
         <div class="chat-txt"><span class="chat-prev">${c.lastSender === ME.uid ? 'Tú: ' : ''}${esc(c.lastText || '')}</span>
           ${waiting ? '<span class="chat-req">Solicitud enviada</span>' : ''}${unread ? '<span class="unread-dot" aria-label="Sin leer"></span>' : ''}</div>
       </div></a>`;
@@ -1902,7 +1924,7 @@ function renderChat() {
   const ctx = chat.ctx; if (!ctx || !ctx.other) return;
   const o = ctx.other, c = ctx.chat;
   $('#chatWho').dataset.user = o.uid;
-  $('#chatWho').innerHTML = `${avatarHTML(o.name, 'sm', o.avatar)}<div style="min-width:0"><strong>${esc(o.name)}</strong>${o.handle ? `<small>@${esc(o.handle)}</small>` : ''}</div>`;
+  $('#chatWho').innerHTML = `${avatarHTML(o.name, 'sm', o.avatar)}<div style="min-width:0"><strong>${esc(o.name)}</strong>${vbadge(o)}${o.handle ? `<small>@${esc(o.handle)}</small>` : ''}</div>`;
   const blocked = state.blocked.has(o.uid);
   $('#chatBlock').textContent = blocked ? 'Desbloquear' : 'Bloquear';
 
@@ -2155,7 +2177,7 @@ $('#verifyCheck').addEventListener('click', async () => {
   const btn = $('#verifyCheck'); btn.disabled = true;
   try {
     await auth.currentUser.reload();
-    if (mailVerified()) { paintVerify(false); renderProfile(); toast('¡Correo verificado!'); }
+    if (mailVerified()) { paintVerify(false); await syncVerified(); renderProfile(); toast('¡Correo verificado!'); }
     else { const er = $('#verifyError'); er.textContent = 'Todavía no aparece como verificado. Abre el enlace del correo y vuelve a intentarlo.'; er.hidden = false; }
   } catch (e) { console.error(e); const er = $('#verifyError'); er.textContent = authError(e); er.hidden = false; }
   btn.disabled = false;

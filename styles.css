@@ -597,3 +597,8 @@ a.act { text-decoration: none; }
 .legal p, .legal li { font-size: .9rem; line-height: 1.5; color: var(--text); }
 .legal ul { padding-left: 20px; margin: 6px 0; }
 .check a { color: var(--primary); font-weight: 700; text-decoration: underline; }
+
+/* ============ Palomita roja de cuenta verificada ============ */
+.vbadge { display: inline-flex; vertical-align: -0.2em; margin-left: 4px; color: #E5322D; flex: none; }
+.vbadge svg { width: 1.05em; height: 1.05em; display: block; }
+.profile-name .vbadge svg { width: 1.1em; height: 1.1em; }
