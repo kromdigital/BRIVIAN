@@ -157,7 +157,7 @@ async function imageProblem(raw, label) {
   return r.url ? '' : `${r.invalid ? 'Pega un enlace de internet (https://…).' : r.private ? IMG_PRIVATE : IMG_HELP} (${label})`;
 }
 
-const toMs = (ts) => (ts && typeof ts.toMillis === 'function' ? ts.toMillis() : ts instanceof Date ? ts.getTime() : Date.now());
+const toMs = (ts) => (ts && typeof ts.toMillis === 'function' ? ts.toMillis() : ts instanceof Date ? ts.getTime() : typeof ts === 'number' ? ts : Date.now());
 const timeAgo = (ts) => {
   const mins = Math.max(0, Math.round((Date.now() - toMs(ts)) / 60000));
   if (mins < 1) return 'ahora';
@@ -316,10 +316,12 @@ const authReadyPromise = new Promise((r) => { resolveAuthReady = r; });
 const isLoggedIn = () => !!ME;
 
 function clearSession() {
-  resetChat(); leaveCommunity(); uCache.clear(); uview = null;
+  resetChat(); stopNotifs(); leaveCommunity(); uCache.clear(); uview = null;
   ME = null; IS_ADMIN = false; sessionTask = null;
   ['following', 'liked', 'saved', 'joined', 'blocked'].forEach((k) => (state[k] = new Set()));
-  state.msgTab = 'chats';
+  state.msgTab = 'chats'; state.feedTab = 'para-ti'; state.feedCat = 'all';
+  $$('#feedTabs .tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === 'para-ti'));
+  const fc = $('#feedCat'); if (fc) fc.value = 'all';
   resetData();
 }
 async function loadSession(user, force = false) {
@@ -342,7 +344,7 @@ async function loadSession(user, force = false) {
 }
 
 /* ---------- Router ---------- */
-const APP_VIEWS = ['inicio', 'explorar', 'crear', 'comunidad', 'perfil', 'mensajes', 'chat', 'u'];
+const APP_VIEWS = ['inicio', 'explorar', 'crear', 'comunidad', 'perfil', 'mensajes', 'chat', 'u', 'notificaciones'];
 const AUTH_VIEWS = ['login', 'registro'];
 function route() {
   if (!authReady) return;
@@ -356,7 +358,8 @@ function route() {
   $('#login').hidden = v !== 'login';
   $('#registro').hidden = v !== 'registro';
   renderLandingCtas();
-  if (isLoggedIn()) startInbox();
+  if (isLoggedIn()) { startInbox(); startNotifs(); }
+  if (v !== 'notificaciones') NOTIF.hl.clear();
   const inComm = v === 'comunidad' && !!arg;
   if (v !== 'chat') leaveChat();
   if (!inComm) leaveCommunity();
@@ -371,7 +374,7 @@ function route() {
       if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
     applyMe();
-    ({ inicio: showInicio, explorar: showExplorar, crear: renderTypeChips, comunidad: () => (inComm ? showCommunity(arg) : showComunidad()), perfil: showPerfil, mensajes: showMensajes, chat: () => showChat(arg), u: () => showUser(arg) }[v])();
+    ({ inicio: showInicio, explorar: showExplorar, crear: renderTypeChips, comunidad: () => (inComm ? showCommunity(arg) : showComunidad()), perfil: showPerfil, mensajes: showMensajes, notificaciones: showNotifs, chat: () => showChat(arg), u: () => showUser(arg) }[v])();
     if (v !== 'chat' && !inComm) window.scrollTo(0, 0);
   } else if (isAuth) {
     window.scrollTo(0, 0);
@@ -510,12 +513,28 @@ function postHTML(p) {
       <button class="act save ${saved ? 'on' : ''}" data-act="save" aria-pressed="${saved}" aria-label="Guardar"><i data-lucide="bookmark"></i></button>
     </div></article>`;
 }
+const postMs = (p) => (p.createdAt ? toMs(p.createdAt) : Date.now());
 function filteredPosts() {
-  let list = data.feed;
+  let list = data.feed.filter((p) => !state.blocked.has(p.authorUid));
   if (state.feedCat !== 'all') list = list.filter((p) => p.cat === state.feedCat);
   if (state.feedTab === 'siguiendo') list = list.filter((p) => state.following.has(p.authorUid));
-  if (state.feedTab === 'mi-zona') list = list.filter((p) => sameCity(p, ME));
+  else if (state.feedTab === 'mi-zona') list = list.filter((p) => sameCity(p, ME));
+  list = list.slice();
+  if (state.feedTab === 'para-ti') {
+    // Primero lo de la gente que sigues y de tu ciudad; dentro de cada grupo, lo más nuevo
+    const score = (p) => (state.following.has(p.authorUid) ? 2 : 0) + (sameCity(p, ME) ? 1 : 0);
+    list.sort((x, y) => score(y) - score(x) || postMs(y) - postMs(x));
+  } else {
+    list.sort((x, y) => postMs(y) - postMs(x));
+  }
   return list;
+}
+/* Si un filtro deja muy pocas publicaciones, se cargan más páginas solas (hasta 6) */
+function maybeFill() {
+  const narrow = state.feedTab === 'siguiendo' || state.feedTab === 'mi-zona' || state.feedCat !== 'all';
+  if (narrow && !data.feedLoading && !data.feedDone && data.feed.length && filteredPosts().length < 5 && (data.fill || 0) < 6) {
+    data.fill = (data.fill || 0) + 1; loadFeed(false);
+  }
 }
 function renderFeed() {
   const box = $('#feed');
@@ -527,7 +546,9 @@ function renderFeed() {
   const list = filteredPosts();
   let msg = 'No hay publicaciones con estos filtros.';
   if (!data.feed.length) msg = 'Aún no hay publicaciones. ¡Sé la primera persona en publicar!';
-  else if (state.feedTab === 'siguiendo') msg = 'Aún no ves publicaciones de la gente que sigues. Explora y sigue negocios.';
+  else if (data.feedLoading) msg = 'Buscando publicaciones…';
+  else if (state.feedTab === 'siguiendo') msg = state.following.size ? 'Las personas que sigues aún no han publicado. Vuelve pronto.' : 'Aún no sigues a nadie. Entra a Explorar y sigue negocios para ver sus publicaciones aquí.';
+  else if (state.feedTab === 'mi-zona') msg = `Aún no hay publicaciones en ${placeText(ME) || 'tu zona'}. Mira "Recientes" para ver a todos.`;
   box.innerHTML = list.length ? list.map(postHTML).join('') : `<div class="empty">${msg}</div>`;
   $('#feedMore').hidden = data.feedDone || !data.feed.length;
   $('#feedMore').disabled = data.feedLoading;
@@ -535,7 +556,7 @@ function renderFeed() {
 }
 async function loadFeed(reset = false) {
   if (data.feedLoading) return;
-  if (reset) Object.assign(data, { feed: [], feedCursor: null, feedDone: false, feedError: false });
+  if (reset) Object.assign(data, { feed: [], feedCursor: null, feedDone: false, feedError: false, fill: 0 });
   if (data.feedDone) { renderFeed(); return; }
   data.feedLoading = true; data.feedError = false;
   renderFeed();
@@ -554,6 +575,7 @@ async function loadFeed(reset = false) {
   data.feedLoading = false;
   renderFeed();
   ensureUsers(data.feed.map((p) => p.authorUid)).then((ch) => { if (ch && !$('#view-inicio').hidden) renderFeed(); });
+  maybeFill();
 }
 function showInicio() {
   if (!fresh(data.feedAt)) loadFeed(true); else renderFeed();
@@ -562,10 +584,10 @@ $('#feedTabs').addEventListener('click', (e) => {
   const b = e.target.closest('.tab'); if (!b) return;
   state.feedTab = b.dataset.tab;
   $$('#feedTabs .tab').forEach((t) => t.classList.toggle('active', t === b));
-  renderFeed();
+  data.fill = 0; renderFeed(); maybeFill();
 });
-$('#feedCat').addEventListener('change', (e) => { state.feedCat = e.target.value; renderFeed(); });
-$('#feedMore').addEventListener('click', () => loadFeed(false));
+$('#feedCat').addEventListener('change', (e) => { state.feedCat = e.target.value; data.fill = 0; renderFeed(); maybeFill(); });
+$('#feedMore').addEventListener('click', () => { data.fill = 0; loadFeed(false); });
 $('.composer-chips').addEventListener('click', (e) => {
   const a = e.target.closest('[data-type]'); if (a) state.postType = a.dataset.type;
 });
@@ -582,6 +604,7 @@ async function toggleLike(p) {
   if (liked) { b.delete(likeRef); b.delete(mineRef); } else { b.set(likeRef, { at: serverTimestamp() }); b.set(mineRef, { at: serverTimestamp() }); }
   b.update(doc(db, 'posts', p.id), { likesCount: increment(liked ? -1 : 1) });
   await b.commit();
+  if (!liked) notify(p.authorUid, 'like', { targetId: p.id }, `like_${p.id}_${ME.uid}`);
   if (liked) state.liked.delete(p.id); else state.liked.add(p.id);
   forPost(p.id, (x) => { x.likesCount = Math.max(0, (x.likesCount || 0) + (liked ? -1 : 1)); });
 }
@@ -598,6 +621,7 @@ async function toggleFollow(uid, name) {
   if (on) b.delete(ref); else b.set(ref, { at: serverTimestamp() });
   b.update(doc(db, 'users', uid), { followersCount: increment(on ? -1 : 1) });
   await b.commit();
+  if (!on) notify(uid, 'follow', {}, `follow_${ME.uid}`);
   if (on) state.following.delete(uid); else state.following.add(uid);
   const person = data.people.find((x) => x.uid === uid);
   if (person) person.followersCount = Math.max(0, (person.followersCount || 0) + (on ? -1 : 1));
@@ -941,6 +965,7 @@ $('#communities').addEventListener('click', async (e) => {
     if (on) { b.delete(mRef); b.delete(jRef); } else { b.set(mRef, { at: serverTimestamp(), ...memberInfo() }); b.set(jRef, { at: serverTimestamp() }); }
     b.update(doc(db, 'communities', c.id), { membersCount: increment(on ? -1 : 1) });
     await b.commit();
+    if (!on) notify(c.ownerUid, 'join', { targetId: c.id, targetName: c.name }, `join_${c.id}_${ME.uid}`);
     if (on) state.joined.delete(c.id); else state.joined.add(c.id);
     c.membersCount = Math.max(0, (c.membersCount || 0) + (on ? -1 : 1));
     toast(on ? `Saliste de ${c.name}` : `Te uniste a ${c.name}`);
@@ -1092,6 +1117,7 @@ $('#cmJoin').addEventListener('click', async () => {
     if (on) { b.delete(mRef); b.delete(jRef); } else { b.set(mRef, { at: serverTimestamp(), ...memberInfo() }); b.set(jRef, { at: serverTimestamp() }); }
     b.update(doc(db, 'communities', ctx.id), { membersCount: increment(on ? -1 : 1) });
     await b.commit();
+    if (!on) notify(ctx.c.ownerUid, 'join', { targetId: ctx.id, targetName: ctx.c.name }, `join_${ctx.id}_${ME.uid}`);
     if (cm !== ctx) return;
     ctx.member = !on;
     if (on) state.joined.delete(ctx.id); else state.joined.add(ctx.id);
@@ -1181,6 +1207,7 @@ $('#cmPosts').addEventListener('click', async (e) => {
       if (on) { b.delete(lRef); b.delete(uRef); } else { b.set(lRef, { at: serverTimestamp() }); b.set(uRef, { at: serverTimestamp() }); }
       b.update(doc(db, 'communities', ctx.id, 'posts', p.id), { likesCount: increment(on ? -1 : 1) });
       await b.commit();
+      if (!on) notify(p.authorUid, 'clike', { targetId: ctx.id, targetName: ctx.c && ctx.c.name }, `clike_${ctx.id}_${p.id}_${ME.uid}`);
       if (on) state.liked.delete(key); else state.liked.add(key);
       p.likesCount = Math.max(0, (p.likesCount || 0) + (on ? -1 : 1));
     } catch (err) { console.error(err); toast(authError(err)); }
@@ -1662,12 +1689,114 @@ function stopInbox() {
   if (chat.unsub) chat.unsub();
   Object.assign(chat, { unsub: null, uid: null, list: [], ready: false, warned: false });
 }
-function resetChat() { leaveChat(); stopInbox(); const b = $('#msgBtn'); if (b) b.classList.remove('has-badge'); }
+function resetChat() { leaveChat(); stopInbox(); const b = $('#msgBtn'); if (b) b.classList.remove('has-badge'); updateBell(); }
 function updateMsgBadge() {
   if (!ME) return;
   const any = chat.list.some((c) => (c.status === 'accepted' || isPendingForMe(c)) && isUnread(c));
   $('#msgBtn').classList.toggle('has-badge', any);
+  updateBell();
 }
+
+
+/* ============================================================
+   NOTIFICACIONES (campanita)
+   ============================================================ */
+const NOTIF = { unsub: null, uid: null, list: [], ready: false, hl: new Set(), marking: false };
+const NOTIF_META = {
+  follow: ['user-plus', 'empezó a seguirte'],
+  like: ['heart', 'le dio like a tu publicación'],
+  join: ['users', 'se unió a tu comunidad'],
+  clike: ['heart', 'dio apoyo a tu publicación en la comunidad'],
+};
+const safeId = (s) => (/^[\w-]{1,128}$/.test(String(s || '')) ? s : '');
+/* Aviso a otra persona. Si falla (sin permiso, ya existía) no afecta la acción principal. */
+async function notify(toUid, type, extra = {}, id) {
+  if (!ME || !toUid || toUid === ME.uid) return;
+  try {
+    const payload = { type, fromUid: ME.uid, fromName: String(ME.name || 'Alguien').slice(0, 60), fromAvatar: cleanUrl(ME.avatar) || '', read: false, at: serverTimestamp() };
+    if (extra.targetId) payload.targetId = String(extra.targetId).slice(0, 128);
+    if (extra.targetName) payload.targetName = String(extra.targetName).slice(0, 80);
+    await setDoc(doc(db, 'users', toUid, 'notifications', id), payload);
+  } catch (e) { console.debug('notify', e && e.code); }
+}
+function chatCounts() {
+  if (!ME) return { unread: 0, requests: 0 };
+  return {
+    unread: chat.list.filter((c) => (c.status === 'accepted' || isPendingForMe(c)) && isUnread(c)).length,
+    requests: chat.list.filter(isPendingForMe).length,
+  };
+}
+function updateBell() {
+  const b = $('#bellBtn'); if (!b) return;
+  const n = ME ? NOTIF.list.filter((x) => !x.read).length : 0;
+  const any = !!ME && (n > 0 || chatCounts().unread > 0);
+  b.classList.toggle('has-badge', any);
+  b.setAttribute('aria-label', any ? 'Notificaciones (tienes nuevas)' : 'Notificaciones');
+}
+function startNotifs() {
+  if (!ME || (NOTIF.unsub && NOTIF.uid === ME.uid)) return;
+  stopNotifs();
+  NOTIF.uid = ME.uid;
+  const q = query(collection(db, 'users', ME.uid, 'notifications'), orderBy('at', 'desc'), limit(50));
+  NOTIF.unsub = onSnapshot(q, (snap) => {
+    NOTIF.list = snap.docs.map(readData);
+    NOTIF.ready = true;
+    updateBell();
+    if (!$('#view-notificaciones').hidden) { renderNotifs(); markNotifsRead(); }
+    ensureUsers(NOTIF.list.map((x) => x.fromUid)).then((ch) => { if (ch && !$('#view-notificaciones').hidden) renderNotifs(); });
+  }, (err) => { console.error(err); NOTIF.ready = true; if (!$('#view-notificaciones').hidden) renderNotifs(); });
+}
+function stopNotifs() {
+  if (NOTIF.unsub) NOTIF.unsub();
+  Object.assign(NOTIF, { unsub: null, uid: null, list: [], ready: false, marking: false });
+  NOTIF.hl.clear();
+  updateBell();
+}
+async function markNotifsRead() {
+  if (!ME || NOTIF.marking) return;
+  const unread = NOTIF.list.filter((x) => !x.read);
+  if (!unread.length) return;
+  unread.forEach((x) => NOTIF.hl.add(x.id));
+  NOTIF.marking = true;
+  try {
+    const b = writeBatch(db);
+    unread.forEach((x) => b.update(doc(db, 'users', ME.uid, 'notifications', x.id), { read: true }));
+    await b.commit();
+  } catch (e) { console.error(e); }
+  NOTIF.marking = false;
+}
+function notifHref(n) {
+  if (n.type === 'join' || n.type === 'clike') { const id = safeId(n.targetId); return id ? `#comunidad/${id}` : '#comunidad'; }
+  const id = safeId(n.fromUid); return id ? `#u/${id}` : '#inicio';
+}
+function renderNotifs() {
+  const box = $('#notifList'); if (!box || !ME) return;
+  const cc = chatCounts();
+  let html = '';
+  if (cc.unread || cc.requests) {
+    const bits = [];
+    if (cc.unread) bits.push(`${cc.unread} ${cc.unread === 1 ? 'chat con mensajes sin leer' : 'chats con mensajes sin leer'}`);
+    if (cc.requests) bits.push(`${cc.requests} ${cc.requests === 1 ? 'solicitud de mensaje' : 'solicitudes de mensaje'}`);
+    html += `<a class="card chat-row ${cc.unread ? 'notif-new' : ''}" href="#mensajes">
+      <span class="notif-ic"><i data-lucide="message-circle"></i></span>
+      <div class="chat-main"><div class="notif-txt"><strong>Mensajes</strong><br>${esc(bits.join(' · '))}</div></div></a>`;
+  }
+  if (!NOTIF.ready && !html) { box.innerHTML = '<div class="loading">Cargando…</div>'; return; }
+  html += NOTIF.list.map((n) => {
+    const meta = NOTIF_META[n.type]; if (!meta) return '';
+    const lv = liveUser(n.fromUid, { name: n.fromName, avatar: n.fromAvatar });
+    const name = lv.name || n.fromName || 'Alguien';
+    const isNew = !n.read || NOTIF.hl.has(n.id);
+    const where = n.targetName ? ` · <em>${esc(n.targetName)}</em>` : '';
+    return `<a class="card chat-row ${isNew ? 'notif-new' : ''}" href="${esc(notifHref(n))}">
+      <span class="notif-ic">${avatarHTML(name, 'md', lv.avatar || n.fromAvatar)}<span class="mini"><i data-lucide="${meta[0]}"></i></span></span>
+      <div class="chat-main"><div class="chat-top"><span class="notif-txt"><strong>${esc(name)}</strong> ${meta[1]}${where}</span><time>${n.at ? timeAgo(n.at) : ''}</time></div></div>
+      ${isNew ? '<span class="unread-dot" aria-label="Nueva"></span>' : ''}</a>`;
+  }).join('');
+  box.innerHTML = html || '<div class="empty">Todo al día. Aquí verás cuando alguien te siga, dé like o se una a tu comunidad.</div>';
+  icons();
+}
+function showNotifs() { renderNotifs(); markNotifsRead(); }
 
 /* ---- Bandeja ---- */
 function showMensajes() {

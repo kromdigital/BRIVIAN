@@ -242,6 +242,7 @@
       </a>
       <div class="top-actions">
         <button class="icon-btn" id="themeBtn" aria-label="Cambiar tema"><i data-lucide="moon"></i></button>
+        <a href="#notificaciones" class="icon-btn" id="bellBtn" aria-label="Notificaciones"><i data-lucide="bell"></i></a>
         <a href="#mensajes" class="icon-btn" id="msgBtn" aria-label="Mensajes"><i data-lucide="message-circle"></i></a>
         <a href="#perfil" class="avatar sm" id="topAvatar" aria-label="Mi perfil"></a>
       </div>
@@ -398,6 +399,13 @@
         <h3 class="section-title">Mis publicaciones</h3>
         <div id="myPosts" class="feed"></div>
         <button class="btn btn-outline btn-block" id="logoutBtn" type="button" style="margin-top:22px"><i data-lucide="log-out"></i> Cerrar sesión</button>
+      </section>
+
+      <!-- NOTIFICACIONES -->
+      <section class="view" id="view-notificaciones" hidden>
+        <h1 class="page-title">Notificaciones</h1>
+        <p class="page-sub">Nuevos seguidores, likes, mensajes y movimiento en tus comunidades.</p>
+        <div id="notifList" class="list"></div>
       </section>
 
       <!-- MENSAJES (bandeja) -->
