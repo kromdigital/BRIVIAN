@@ -8,7 +8,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import {
   getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword,
-  signOut, sendPasswordResetEmail, deleteUser, sendEmailVerification, reauthenticateWithCredential, EmailAuthProvider,
+  signOut, sendPasswordResetEmail, deleteUser, sendEmailVerification, reauthenticateWithCredential, EmailAuthProvider, verifyBeforeUpdateEmail,
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 import {
   initializeFirestore, doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc,
@@ -33,7 +33,7 @@ export const db = initializeFirestore(app, { ignoreUndefinedProperties: true });
 
 export {
   onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut,
-  sendPasswordResetEmail, deleteUser, sendEmailVerification, reauthenticateWithCredential, EmailAuthProvider,
+  sendPasswordResetEmail, deleteUser, sendEmailVerification, reauthenticateWithCredential, EmailAuthProvider, verifyBeforeUpdateEmail,
   doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc,
   query, where, orderBy, limit, limitToLast, startAfter, writeBatch, runTransaction, serverTimestamp, increment,
   onSnapshot,

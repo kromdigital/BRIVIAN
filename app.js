@@ -8,7 +8,7 @@
 import {
   auth, db,
   onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut,
-  sendPasswordResetEmail, deleteUser, sendEmailVerification, reauthenticateWithCredential, EmailAuthProvider,
+  sendPasswordResetEmail, deleteUser, sendEmailVerification, reauthenticateWithCredential, EmailAuthProvider, verifyBeforeUpdateEmail,
   doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc,
   query, where, orderBy, limit, limitToLast, startAfter, writeBatch, runTransaction, serverTimestamp, increment, onSnapshot,
 } from './firebase.js';
@@ -187,6 +187,7 @@ function authError(e) {
     'auth/invalid-credential': 'Correo o contraseña incorrectos.',
     'auth/wrong-password': 'Correo o contraseña incorrectos.',
     'auth/user-not-found': 'Correo o contraseña incorrectos.',
+    'auth/operation-not-allowed': 'Firebase no permite cambiar el correo con esta configuración. Avísanos desde Ayuda.',
     'auth/requires-recent-login': 'Por seguridad, cierra sesión, vuelve a entrar e inténtalo de nuevo.',
     'auth/too-many-requests': 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.',
     'auth/network-request-failed': 'Sin conexión. Revisa tu internet e inténtalo de nuevo.',
@@ -2111,14 +2112,14 @@ $('#forgotBtn').addEventListener('click', async () => {
    MENÚ DE CUENTA (⋮): verificar correo, contraseña, ayuda,
    términos, eliminar cuenta y cerrar sesión
    ============================================================ */
-const ACCT_SHEETS = ['menuSheet', 'verifySheet', 'helpSheet', 'legalSheet', 'delSheet'];
+const ACCT_SHEETS = ['menuSheet', 'emailSheet', 'verifySheet', 'helpSheet', 'legalSheet', 'delSheet'];
 const closeAcct = () => ACCT_SHEETS.forEach((id) => { const m = $('#' + id); if (!m.hidden) closeModal(m); });
 const openAcct = (id, focus) => { closeAcct(); openModal($('#' + id), focus); };
 ACCT_SHEETS.forEach((id) => {
   const m = $('#' + id);
   m.addEventListener('click', (e) => { if (e.target === m) closeModal(m); });
 });
-[['menuClose', 'menuSheet'], ['verifyClose', 'verifySheet'], ['helpClose', 'helpSheet'], ['legalClose', 'legalSheet'], ['delClose', 'delSheet']]
+[['menuClose', 'menuSheet'], ['emailClose', 'emailSheet'], ['verifyClose', 'verifySheet'], ['helpClose', 'helpSheet'], ['legalClose', 'legalSheet'], ['delClose', 'delSheet']]
   .forEach(([b, s]) => $('#' + b).addEventListener('click', () => closeModal($('#' + s))));
 const mailVerified = () => !!(auth.currentUser && auth.currentUser.emailVerified);
 function paintMenu() {
@@ -2157,6 +2158,37 @@ $('#verifyCheck').addEventListener('click', async () => {
     if (mailVerified()) { paintVerify(false); renderProfile(); toast('¡Correo verificado!'); }
     else { const er = $('#verifyError'); er.textContent = 'Todavía no aparece como verificado. Abre el enlace del correo y vuelve a intentarlo.'; er.hidden = false; }
   } catch (e) { console.error(e); const er = $('#verifyError'); er.textContent = authError(e); er.hidden = false; }
+  btn.disabled = false;
+});
+
+/* ---- Cambiar correo electrónico ---- */
+$('#mEmail').addEventListener('click', () => {
+  const u = auth.currentUser; if (!u) return;
+  $('#emailNow').textContent = u.email || '';
+  $('#newEmail').value = ''; $('#emailPass').value = ''; $('#emailError').hidden = true;
+  $('#emailForm').hidden = false; $('#emailDone').hidden = true;
+  openAcct('emailSheet', '#newEmail');
+});
+$('#emailOk').addEventListener('click', () => closeAcct());
+$('#emailGo').addEventListener('click', async () => {
+  const u = auth.currentUser, err = $('#emailError');
+  const next = $('#newEmail').value.trim().toLowerCase(), pass = $('#emailPass').value;
+  const fail = (m) => { err.textContent = m; err.hidden = false; };
+  err.hidden = true;
+  if (!u) return;
+  if (!/^\S+@\S+\.\S+$/.test(next)) return fail('Escribe un correo nuevo válido.');
+  if (next === String(u.email || '').toLowerCase()) return fail('Ese ya es tu correo actual.');
+  if (!pass) return fail('Escribe tu contraseña actual para confirmar.');
+  const btn = $('#emailGo'); btn.disabled = true;
+  try {
+    await reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, pass));
+    await verifyBeforeUpdateEmail(u, next);
+    $('#emailSentTo').textContent = next;
+    $('#emailForm').hidden = true; $('#emailDone').hidden = false;
+  } catch (e) {
+    console.error(e);
+    fail(['auth/wrong-password', 'auth/invalid-credential'].includes(e.code) ? 'Contraseña incorrecta.' : authError(e));
+  }
   btn.disabled = false;
 });
 
