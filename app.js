@@ -8,7 +8,7 @@
 import {
   auth, db,
   onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut,
-  sendPasswordResetEmail, deleteUser,
+  sendPasswordResetEmail, deleteUser, sendEmailVerification, reauthenticateWithCredential, EmailAuthProvider,
   doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc,
   query, where, orderBy, limit, limitToLast, startAfter, writeBatch, runTransaction, serverTimestamp, increment, onSnapshot,
 } from './firebase.js';
@@ -187,6 +187,7 @@ function authError(e) {
     'auth/invalid-credential': 'Correo o contraseña incorrectos.',
     'auth/wrong-password': 'Correo o contraseña incorrectos.',
     'auth/user-not-found': 'Correo o contraseña incorrectos.',
+    'auth/requires-recent-login': 'Por seguridad, cierra sesión, vuelve a entrar e inténtalo de nuevo.',
     'auth/too-many-requests': 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.',
     'auth/network-request-failed': 'Sin conexión. Revisa tu internet e inténtalo de nuevo.',
     'app/handle-taken': 'Ese usuario ya está en uso. Prueba con otro.',
@@ -1541,6 +1542,7 @@ function renderProfile() {
   $('#pRole').textContent = ME.role;
   $('#pCity').textContent = ME.city || placeText(ME);
   $('#pSince').textContent = ME.since;
+  $('#pMail').hidden = !(auth.currentUser && auth.currentUser.emailVerified);
   $('#pBio').textContent = ME.bio || '';
   $('#pBio').hidden = !ME.bio;
   const cover = cleanUrl(ME.cover);
@@ -1636,7 +1638,7 @@ $('#editSave').addEventListener('click', async () => {
 });
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
-  [$('#sheet'), $('#editSheet'), $('#commSheet'), $('#reportSheet')].forEach((m) => { if (!m.hidden) closeModal(m); });
+  [$('#sheet'), $('#editSheet'), $('#commSheet'), $('#reportSheet'), ...ACCT_SHEETS.map((id) => $('#' + id))].forEach((m) => { if (!m.hidden) closeModal(m); });
   $('#chatMenu').hidden = true;
 });
 $('#shareBtn').addEventListener('click', async () => {
@@ -2104,9 +2106,171 @@ $('#forgotBtn').addEventListener('click', async () => {
     toast('Si el correo está registrado, te enviamos un enlace para cambiar tu contraseña.');
   } catch (ex) { console.error(ex); err.textContent = authError(ex); err.hidden = false; }
 });
+
+/* ============================================================
+   MENÚ DE CUENTA (⋮): verificar correo, contraseña, ayuda,
+   términos, eliminar cuenta y cerrar sesión
+   ============================================================ */
+const ACCT_SHEETS = ['menuSheet', 'verifySheet', 'helpSheet', 'legalSheet', 'delSheet'];
+const closeAcct = () => ACCT_SHEETS.forEach((id) => { const m = $('#' + id); if (!m.hidden) closeModal(m); });
+const openAcct = (id, focus) => { closeAcct(); openModal($('#' + id), focus); };
+ACCT_SHEETS.forEach((id) => {
+  const m = $('#' + id);
+  m.addEventListener('click', (e) => { if (e.target === m) closeModal(m); });
+});
+[['menuClose', 'menuSheet'], ['verifyClose', 'verifySheet'], ['helpClose', 'helpSheet'], ['legalClose', 'legalSheet'], ['delClose', 'delSheet']]
+  .forEach(([b, s]) => $('#' + b).addEventListener('click', () => closeModal($('#' + s))));
+const mailVerified = () => !!(auth.currentUser && auth.currentUser.emailVerified);
+function paintMenu() {
+  const u = auth.currentUser;
+  $('#menuEmail').textContent = u && u.email ? u.email : '';
+  const tag = $('#mVerifyTag'), ok = mailVerified();
+  tag.textContent = ok ? 'Verificado' : 'Pendiente';
+  tag.className = 'menu-tag ' + (ok ? 'good' : 'warn');
+}
+$('#profMenuBtn').addEventListener('click', () => { paintMenu(); openAcct('menuSheet', '#menuClose'); icons(); });
+
+/* ---- Verificación de correo ---- */
+function paintVerify(sent) {
+  const u = auth.currentUser, ok = mailVerified();
+  $('#verifyError').hidden = true;
+  $('#verifyText').textContent = ok
+    ? `Tu correo ${u ? u.email : ''} está verificado. ✓`
+    : sent
+      ? `Te enviamos un enlace a ${u ? u.email : 'tu correo'}. Ábrelo (revisa también spam) y luego toca “Ya verifiqué mi correo”.`
+      : `Verifica ${u ? u.email : 'tu correo'} para proteger tu cuenta y poder recuperarla si olvidas tu contraseña.`;
+  $('#verifySend').hidden = ok;
+  $('#verifySend').textContent = sent ? 'Reenviar correo' : 'Enviar correo de verificación';
+  $('#verifyCheck').hidden = ok || !sent;
+}
+$('#mVerify').addEventListener('click', () => { paintVerify(false); openAcct('verifySheet', '#verifyClose'); });
+$('#verifySend').addEventListener('click', async () => {
+  const btn = $('#verifySend'); btn.disabled = true;
+  try { await sendEmailVerification(auth.currentUser); paintVerify(true); toast('Correo enviado'); }
+  catch (e) { console.error(e); const er = $('#verifyError'); er.textContent = authError(e); er.hidden = false; }
+  btn.disabled = false;
+});
+$('#verifyCheck').addEventListener('click', async () => {
+  const btn = $('#verifyCheck'); btn.disabled = true;
+  try {
+    await auth.currentUser.reload();
+    if (mailVerified()) { paintVerify(false); renderProfile(); toast('¡Correo verificado!'); }
+    else { const er = $('#verifyError'); er.textContent = 'Todavía no aparece como verificado. Abre el enlace del correo y vuelve a intentarlo.'; er.hidden = false; }
+  } catch (e) { console.error(e); const er = $('#verifyError'); er.textContent = authError(e); er.hidden = false; }
+  btn.disabled = false;
+});
+
+/* ---- Cambiar contraseña (por correo) ---- */
+$('#mPass').addEventListener('click', async () => {
+  const u = auth.currentUser; if (!u || !u.email) return;
+  if (!window.confirm(`Te enviaremos un correo a ${u.email} para que cambies tu contraseña. ¿Continuar?`)) return;
+  try { await sendPasswordResetEmail(auth, u.email); closeAcct(); toast('Te enviamos el correo para cambiar tu contraseña'); }
+  catch (e) { console.error(e); toast(authError(e)); }
+});
+
+/* ---- Ayuda y reportar un problema ---- */
+$('#mHelp').addEventListener('click', () => { $('#hpText').value = ''; $('#helpError').hidden = true; openAcct('helpSheet', '#helpClose'); });
+$('#hpSend').addEventListener('click', async () => {
+  const text = $('#hpText').value.trim(), err = $('#helpError');
+  if (text.length < 5) { err.textContent = 'Cuéntanos un poco más (mínimo 5 letras).'; err.hidden = false; return; }
+  const btn = $('#hpSend'); btn.disabled = true; err.hidden = true;
+  try {
+    await addDoc(collection(db, 'feedback'), {
+      uid: ME.uid, kind: $('#hpKind').value, text: text.slice(0, 1000),
+      page: String(location.hash || '#').slice(0, 100), ua: String(navigator.userAgent || '').slice(0, 300),
+      createdAt: serverTimestamp(),
+    });
+    closeModal($('#helpSheet')); toast('¡Gracias! Recibimos tu mensaje');
+  } catch (e) { console.error(e); err.textContent = authError(e); err.hidden = false; }
+  btn.disabled = false;
+});
+
+/* ---- Términos y privacidad ---- */
+$('#mLegal').addEventListener('click', () => openAcct('legalSheet', '#legalClose'));
+document.addEventListener('click', (e) => {
+  const l = e.target.closest('[data-legal]'); if (!l) return;
+  e.preventDefault(); openAcct('legalSheet', '#legalClose');
+});
+
+/* ---- Cerrar sesión ---- */
 $('#logoutBtn').addEventListener('click', async () => {
+  closeAcct();
   location.hash = 'landing';
   try { await signOut(auth); toast('Sesión cerrada'); } catch (e) { console.error(e); toast(authError(e)); }
+});
+
+/* ---- Eliminar cuenta ---- */
+$('#mDelete').addEventListener('click', () => { $('#delPass').value = ''; $('#delError').hidden = true; openAcct('delSheet', '#delPass'); });
+const chunk = (arr, n) => { const out = []; for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n)); return out; };
+async function eraseMyData(uid, handle) {
+  const step = async (fn) => { try { await fn(); } catch (e) { console.error('eliminar cuenta:', e); } };
+  const sub = (name) => getDocs(collection(db, 'users', uid, name)).then((s) => s.docs);
+  // comunidades que creé (se borran) y a las que me uní (salgo)
+  const owned = new Set();
+  await step(async () => {
+    const s = await getDocs(query(collection(db, 'communities'), where('ownerUid', '==', uid)));
+    for (const d of s.docs) { owned.add(d.id); await deleteDoc(d.ref).catch((e) => console.error(e)); }
+  });
+  await step(async () => {
+    for (const d of await sub('joined')) {
+      if (owned.has(d.id)) { await deleteDoc(d.ref).catch(() => {}); continue; }
+      try {
+        const b = writeBatch(db);
+        b.delete(doc(db, 'communities', d.id, 'members', uid)); b.delete(d.ref);
+        b.update(doc(db, 'communities', d.id), { membersCount: increment(-1) });
+        await b.commit();
+      } catch (e) { await deleteDoc(d.ref).catch(() => {}); }   // la comunidad ya no existe
+    }
+  });
+  // dejar de seguir a todos (baja el contador de cada persona)
+  await step(async () => {
+    for (const d of await sub('following')) {
+      try {
+        const b = writeBatch(db);
+        b.delete(d.ref); b.update(doc(db, 'users', d.id), { followersCount: increment(-1) });
+        await b.commit();
+      } catch (e) { await deleteDoc(d.ref).catch(() => {}); }
+    }
+  });
+  // mis publicaciones
+  await step(async () => {
+    const s = await getDocs(query(collection(db, 'posts'), where('authorUid', '==', uid)));
+    for (const part of chunk(s.docs, 400)) { const b = writeBatch(db); part.forEach((d) => b.delete(d.ref)); await b.commit(); }
+  });
+  // datos privados
+  for (const name of ['saved', 'likedPosts', 'notifications', 'blocked']) {
+    await step(async () => { for (const part of chunk(await sub(name), 400)) { const b = writeBatch(db); part.forEach((d) => b.delete(d.ref)); await b.commit(); } });
+  }
+  await step(() => deleteDoc(doc(db, 'handles', handle)));
+}
+$('#delGo').addEventListener('click', async () => {
+  const pass = $('#delPass').value, err = $('#delError'), u = auth.currentUser;
+  if (!u || !ME) return;
+  if (!pass) { err.textContent = 'Escribe tu contraseña.'; err.hidden = false; return; }
+  const btn = $('#delGo'); btn.disabled = true; err.hidden = true;
+  try {
+    try { await reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, pass)); }
+    catch (e) {
+      console.error(e);
+      err.textContent = ['auth/wrong-password', 'auth/invalid-credential'].includes(e.code) ? 'Contraseña incorrecta.' : authError(e);
+      err.hidden = false; btn.disabled = false; return;
+    }
+    const uid = ME.uid, handle = ME.handle;
+    btn.textContent = 'Eliminando…';
+    stopNotifs(); stopInbox();
+    await eraseMyData(uid, handle);
+    await deleteDoc(doc(db, 'users', uid));          // si falla, la cuenta sigue intacta y se puede reintentar
+    await deleteUser(u);
+    closeAcct();
+    location.hash = 'landing';
+    toast('Tu cuenta fue eliminada');
+  } catch (e) {
+    console.error(e);
+    err.textContent = e.code === 'permission-denied' ? 'No pudimos borrar tu perfil. Revisa que publicaste las reglas de Firestore nuevas.' : authError(e);
+    err.hidden = false;
+    if (ME) { startInbox(); startNotifs(); }
+  }
+  btn.disabled = false; btn.innerHTML = '<i data-lucide="trash-2"></i> Eliminar para siempre'; icons();
 });
 
 /* ----- Crear cuenta (4 pasos) ----- */

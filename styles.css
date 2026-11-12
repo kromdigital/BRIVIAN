@@ -577,3 +577,23 @@ a.act { text-decoration: none; }
 .chat-row.notif-new { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
 .notif-txt { font-size: .92rem; line-height: 1.35; }
 .icon-btn.has-badge::after { background: #E5322D; box-shadow: 0 0 0 0 rgba(229,50,45,.5); }
+
+/* ============ Menú de cuenta (⋮) ============ */
+.menu-list { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.menu-item { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; padding: 14px 12px; border-radius: 14px; font-weight: 600; color: var(--text); }
+.menu-item:hover, .menu-item:focus-visible { background: var(--surface-2); }
+.menu-item svg { width: 20px; height: 20px; color: var(--muted); flex: none; }
+.menu-item span { flex: 1; }
+.menu-item.danger, .menu-item.danger svg { color: #b42318; }
+.menu-tag { font-size: .72rem; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+.menu-tag.warn { background: #FDECEA; color: #b42318; }
+.menu-tag.good { background: #E4F6EA; color: #1c7a3d; }
+.ok-mail { color: #1c7a3d; font-weight: 600; }
+.btn-danger { background: #c62828; color: #fff; justify-content: center; }
+.btn-danger:hover { background: #a71f1f; }
+.help-faq { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.help-faq details p { margin: 0 0 14px; color: var(--muted); font-size: .92rem; }
+.legal h3 { margin: 16px 0 6px; font-size: 1.02rem; }
+.legal p, .legal li { font-size: .9rem; line-height: 1.5; color: var(--text); }
+.legal ul { padding-left: 20px; margin: 6px 0; }
+.check a { color: var(--primary); font-weight: 700; text-decoration: underline; }
