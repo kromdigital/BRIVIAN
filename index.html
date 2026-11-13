@@ -137,9 +137,11 @@
         <label class="field-label" for="rAvatarUrl">Enlace de tu foto de perfil <span class="muted">(opcional)</span></label>
         <input class="input" id="rAvatarUrl" type="url" inputmode="url" autocapitalize="none" autocomplete="off" placeholder="https://…">
         <small class="img-status" id="rAvatarStatus" role="status" aria-live="polite"></small>
+        <button class="btn btn-sm btn-soft adj-btn" id="rAvatarAdj" type="button" hidden><i data-lucide="move"></i> Mover y ajustar</button>
         <label class="field-label" for="rCoverUrl">Enlace de tu portada <span class="muted">(opcional)</span></label>
         <input class="input" id="rCoverUrl" type="url" inputmode="url" autocapitalize="none" autocomplete="off" placeholder="https://…">
         <small class="img-status" id="rCoverStatus" role="status" aria-live="polite"></small>
+        <button class="btn btn-sm btn-soft adj-btn" id="rCoverAdj" type="button" hidden><i data-lucide="move"></i> Mover y ajustar</button>
         <div id="rPlace"></div>
         <label class="field-label" for="rColonia">Colonia o zona <span class="muted">(opcional)</span></label>
         <input class="input" id="rColonia" maxlength="60" placeholder="Ej. Colonia Americana">
@@ -336,7 +338,8 @@
           <label class="field-label" for="postImgUrl">Foto <span class="muted">(opcional: pega el enlace de una imagen)</span></label>
           <input class="input" id="postImgUrl" type="url" inputmode="url" autocapitalize="none" autocomplete="off" placeholder="https://…">
           <small class="img-status" id="postImgStatus" role="status" aria-live="polite"></small>
-          <img id="preview" class="preview" alt="" hidden referrerpolicy="no-referrer">
+          <button class="btn btn-sm btn-soft adj-btn" id="postImgAdj" type="button" hidden><i data-lucide="move"></i> Mover y ajustar</button>
+          <div class="post-media prev-box" id="previewBox" hidden><img id="preview" class="preview" alt="" hidden referrerpolicy="no-referrer"></div>
           <button class="btn btn-primary btn-block" id="publishBtn" type="submit" disabled><i data-lucide="send"></i> Publicar</button>
         </form>
       </section>
@@ -535,9 +538,11 @@
       <label class="field-label" for="eAvatar">Enlace de tu foto de perfil</label>
       <input class="input" id="eAvatar" type="url" inputmode="url" autocapitalize="none" autocomplete="off" placeholder="https://…">
       <small class="img-status" id="eAvatarStatus" role="status" aria-live="polite"></small>
+      <button class="btn btn-sm btn-soft adj-btn" id="eAvatarAdj" type="button" hidden><i data-lucide="move"></i> Mover y ajustar</button>
       <label class="field-label" for="eCover">Enlace de tu portada</label>
       <input class="input" id="eCover" type="url" inputmode="url" autocapitalize="none" autocomplete="off" placeholder="https://…">
       <small class="img-status" id="eCoverStatus" role="status" aria-live="polite"></small>
+      <button class="btn btn-sm btn-soft adj-btn" id="eCoverAdj" type="button" hidden><i data-lucide="move"></i> Mover y ajustar</button>
       <p class="form-error" id="editError" role="alert" hidden></p>
       <button class="btn btn-primary btn-block" id="editSave" type="button">Guardar cambios</button>
     </div>
@@ -754,6 +759,24 @@
     }, 7000);
   })();
 </script>
-<script type="module" src="app.js"></script>
+  <!-- Ajustar imagen (va al final para quedar por encima de los demás paneles) -->
+  <div class="sheet-backdrop" id="cropSheet" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="cropTitle">
+      <div class="sheet-head">
+        <h2 id="cropTitle">Ajusta tu imagen</h2>
+        <button class="icon-btn" id="cropClose" type="button" aria-label="Cerrar"><i data-lucide="x"></i></button>
+      </div>
+      <p class="page-sub">Arrastra la imagen para moverla y usa el control para acercar. Así se verá.</p>
+      <div class="crop-frame wide" id="cropFrame" tabindex="0" role="img" aria-label="Vista previa. Arrastra para mover; flechas para mover y + o - para acercar."><img class="crop-img" id="cropImg" alt="" draggable="false" referrerpolicy="no-referrer"></div>
+      <label class="field-label" for="cropZoom">Zoom</label>
+      <input class="crop-zoom" id="cropZoom" type="range" min="1" max="3" step="0.01" value="1">
+      <div class="crop-actions">
+        <button class="btn btn-outline" id="cropReset" type="button">Restablecer</button>
+        <button class="btn btn-primary" id="cropOk" type="button">Listo</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
 </body>
 </html>

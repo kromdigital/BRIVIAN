@@ -55,17 +55,34 @@ function imgUrl(raw) {
 }
 const cssUrl = (u) => `url('${u.replace(/['()]/g, (c) => '%' + c.charCodeAt(0).toString(16))}')`;
 
+/* Ajuste de imagen: { x, y, z } = punto de enfoque (% horizontal y vertical) y zoom (1 = sin zoom) */
+const clampN = (n, a, b) => Math.min(b, Math.max(a, n));
+function posOf(p) {
+  if (!p || typeof p !== 'object') return null;
+  const x = Number(p.x), y = Number(p.y), z = Number(p.z);
+  if (![x, y, z].every(Number.isFinite)) return null;
+  const r = { x: Math.round(clampN(x, 0, 100) * 10) / 10, y: Math.round(clampN(y, 0, 100) * 10) / 10, z: Math.round(clampN(z, 1, 4) * 100) / 100 };
+  return r.x === 50 && r.y === 50 && r.z === 1 ? null : r;
+}
+const posCss = (p) => { p = posOf(p); return p ? `object-position:${p.x}% ${p.y}%;transform:scale(${p.z});transform-origin:${p.x}% ${p.y}%` : ''; };
+function setCover(el, url, pos) {
+  const p = posOf(pos) || { x: 50, y: 50, z: 1 };
+  el.style.setProperty('--img', url ? cssUrl(url) : 'none');
+  el.style.setProperty('--px', p.x + '%'); el.style.setProperty('--py', p.y + '%'); el.style.setProperty('--pz', p.z);
+}
+
 /* La foto va en un <img> sobre las iniciales: si el enlace falla, se quedan las iniciales (nunca un círculo vacío) */
-const avatarImg = (u) => (u ? `<img class="av-img" src="${esc(u)}" alt="" referrerpolicy="no-referrer" decoding="async">` : '');
-const avatarHTML = (name, size = 'sm', img) => {
+const avatarImg = (u, pos) => (u ? `<img class="av-img" src="${esc(u)}" alt="" referrerpolicy="no-referrer" decoding="async"${posOf(pos) ? ` style="${esc(posCss(pos))}"` : ''}>` : '');
+const avatarHTML = (name, size = 'sm', img, pos) => {
   const [c1, c2] = colorsFor(name);
-  return `<span class="avatar ${size}" style="${esc(`--c1:${c1};--c2:${c2}`)}">${esc(initials(name))}${avatarImg(cleanUrl(img))}</span>`;
+  return `<span class="avatar ${size}" style="${esc(`--c1:${c1};--c2:${c2}`)}">${esc(initials(name))}${avatarImg(cleanUrl(img), pos)}</span>`;
 };
 document.addEventListener('load', (e) => { const t = e.target; if (t.classList && t.classList.contains('av-img')) t.parentElement.classList.add('loaded'); }, true);
 document.addEventListener('error', (e) => {
   const t = e.target; if (!t.classList) return;
   if (t.classList.contains('av-img')) t.remove();
-  else if (t.classList.contains('post-img')) t.style.display = 'none';
+  else if (t.classList.contains('pick-img')) { t.parentElement.classList.remove('has-img'); t.remove(); }
+  else if (t.classList.contains('post-img')) { t.style.display = 'none'; if (t.parentElement.classList.contains('post-media')) t.parentElement.style.display = 'none'; }
 }, true);
 
 /* Comprueba que un enlace sea de verdad una imagen que se puede mostrar */
@@ -136,6 +153,104 @@ const NEEDS_LOGIN = /(^|\.)(drive\.google\.com|googleusercontent\.com|photos\.go
 const IMG_PRIVATE = 'Esa imagen es privada: tú la ves porque tienes la sesión iniciada, pero las demás personas no. Compártela como "cualquier persona con el enlace" (o hazla pública) y pega el enlace otra vez, o usa otro enlace.';
 const IMG_OK = { direct: '✓ Imagen lista', proxy: '✓ Imagen lista (la ajustamos para que se vea bien)', page: '✓ Usamos la imagen principal de esa página', slow: 'La imagen tarda en cargar; se guardará de todos modos.' };
 /* Al escribir un enlace muestra al instante si funciona (y la vista previa, si hay) */
+/* ============================================================
+   AJUSTAR IMAGEN · mover con el dedo/ratón y hacer zoom
+   Solo se guarda el enfoque y el zoom (no se toca el archivo), así funciona con cualquier enlace.
+   ============================================================ */
+const CROP = { res: null, pos: { x: 50, y: 50, z: 1 }, ptrs: new Map(), pinch: null };
+const cropOpen = () => !$('#cropSheet').hidden;
+function paintCrop() {
+  const { x, y, z } = CROP.pos;
+  $('#cropImg').style.cssText = `object-position:${x}% ${y}%;transform:scale(${z});transform-origin:${x}% ${y}%`;
+  $('#cropZoom').value = z;
+}
+function openCrop({ url, kind = 'wide', pos }) {
+  return new Promise((resolve) => {
+    if (CROP.res) closeCrop(undefined);
+    CROP.res = resolve; CROP.ptrs.clear(); CROP.pinch = null;
+    CROP.pos = { ...(posOf(pos) || { x: 50, y: 50, z: 1 }) };
+    CROP.pos.z = clampN(CROP.pos.z, 1, 3);
+    $('#cropFrame').className = `crop-frame ${kind}`;
+    $('#cropTitle').textContent = kind === 'round' ? 'Ajusta tu foto de perfil' : kind === 'wide' ? 'Ajusta tu portada' : 'Ajusta tu foto';
+    const img = $('#cropImg');
+    img.onerror = () => { toast('No pudimos abrir esa imagen.'); closeCrop(undefined); };
+    img.src = url;
+    paintCrop();
+    $('#cropSheet').hidden = false;
+    $('#cropFrame').focus({ preventScroll: true });
+  });
+}
+function closeCrop(result) {
+  $('#cropSheet').hidden = true;
+  CROP.ptrs.clear(); CROP.pinch = null;
+  $('#cropImg').onerror = null;
+  const r = CROP.res; CROP.res = null;
+  if (r) r(result);
+}
+/* píxeles de recorrido que hay en cada eje con el zoom actual (0 = no hay nada que mover) */
+function cropSlack() {
+  const f = $('#cropFrame'), im = $('#cropImg');
+  const Fw = f.clientWidth, Fh = f.clientHeight, nw = im.naturalWidth || Fw, nh = im.naturalHeight || Fh;
+  const s = Math.max(Fw / nw, Fh / nh), z = CROP.pos.z;
+  return { x: z * nw * s - Fw, y: z * nh * s - Fh };
+}
+function cropMove(dx, dy) {
+  const sl = cropSlack();
+  if (sl.x > 0.5) CROP.pos.x = clampN(CROP.pos.x - (dx / sl.x) * 100, 0, 100);
+  if (sl.y > 0.5) CROP.pos.y = clampN(CROP.pos.y - (dy / sl.y) * 100, 0, 100);
+  paintCrop();
+}
+function cropZoom(z) { CROP.pos.z = clampN(z, 1, 3); paintCrop(); }
+(function wireCrop() {
+  const f = $('#cropFrame');
+  const dist = () => { const [a, b] = [...CROP.ptrs.values()]; return Math.hypot(a.x - b.x, a.y - b.y) || 1; };
+  f.addEventListener('pointerdown', (e) => {
+    f.setPointerCapture?.(e.pointerId);
+    CROP.ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    CROP.pinch = CROP.ptrs.size === 2 ? { d: dist(), z: CROP.pos.z } : null;
+  });
+  f.addEventListener('pointermove', (e) => {
+    const prev = CROP.ptrs.get(e.pointerId); if (!prev) return;
+    const cur = { x: e.clientX, y: e.clientY };
+    CROP.ptrs.set(e.pointerId, cur);
+    if (CROP.ptrs.size === 1) cropMove(cur.x - prev.x, cur.y - prev.y);
+    else if (CROP.ptrs.size === 2 && CROP.pinch) cropZoom(CROP.pinch.z * (dist() / CROP.pinch.d));
+  });
+  const up = (e) => { CROP.ptrs.delete(e.pointerId); CROP.pinch = null; };
+  f.addEventListener('pointerup', up); f.addEventListener('pointercancel', up);
+  f.addEventListener('wheel', (e) => { e.preventDefault(); cropZoom(CROP.pos.z - e.deltaY * 0.002); }, { passive: false });
+  f.addEventListener('keydown', (e) => {
+    const k = e.key, st = 8;
+    if (k === 'ArrowLeft') cropMove(st, 0); else if (k === 'ArrowRight') cropMove(-st, 0);
+    else if (k === 'ArrowUp') cropMove(0, st); else if (k === 'ArrowDown') cropMove(0, -st);
+    else if (k === '+' || k === '=') cropZoom(CROP.pos.z + 0.1); else if (k === '-') cropZoom(CROP.pos.z - 0.1);
+    else return;
+    e.preventDefault();
+  });
+  $('#cropZoom').addEventListener('input', (e) => cropZoom(Number(e.target.value)));
+  $('#cropReset').addEventListener('click', () => { CROP.pos = { x: 50, y: 50, z: 1 }; paintCrop(); });
+  $('#cropOk').addEventListener('click', () => closeCrop(posOf(CROP.pos)));
+  $('#cropClose').addEventListener('click', () => closeCrop(undefined));
+  $('#cropSheet').addEventListener('click', (e) => { if (e.target.id === 'cropSheet') closeCrop(undefined); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && cropOpen()) { e.stopPropagation(); closeCrop(undefined); }
+  }, true);
+})();
+/* Botón "Mover y ajustar" junto a un campo de enlace de imagen */
+function wireAdjust({ input, btn, kind, get, set }) {
+  const sync = () => { btn.hidden = !input.value.trim(); };
+  input.addEventListener('input', () => { set(null); sync(); });
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    let r; try { r = await resolveImage(input.value); } finally { btn.disabled = false; }
+    if (!r || !r.url) { toast('Primero pega el enlace de una imagen válida.'); return; }
+    const res = await openCrop({ url: r.url, kind, pos: get() });
+    if (res !== undefined) set(res);
+  });
+  sync();
+  return { sync };
+}
+
 function watchImageInput(input, status, onUrl) {
   let seq = 0, timer;
   const run = async () => {
@@ -599,7 +714,7 @@ function applyMe() {
   [...$$('[data-me]'), $('#topAvatar')].forEach((el) => {
     el.style.setProperty('--c1', c1); el.style.setProperty('--c2', c2);
     el.classList.remove('loaded');
-    el.innerHTML = esc(initials(ME.name)) + avatarImg(av);
+    el.innerHTML = esc(initials(ME.name)) + avatarImg(av, ME.avatarPos);
   });
   $$('[data-me-name]').forEach((el) => (el.textContent = ME.name));
   $$('[data-me-handle]').forEach((el) => (el.textContent = ME.handle));
@@ -638,7 +753,7 @@ function postHTML(p) {
   const a = liveUser(p.authorUid, p);
   return `<article class="card post" data-id="${esc(p.id)}" data-author="${esc(p.authorUid)}">
     <div class="post-head" data-user="${esc(p.authorUid)}">
-      ${avatarHTML(a.name || p.name, 'md', a.avatar)}
+      ${avatarHTML(a.name || p.name, 'md', a.avatar, a.avatarPos)}
       <div class="post-who">
         <strong>${esc(a.name || p.name)}</strong>${vbadge(a)}<span class="badge t-${esc(p.type)}">${esc(p.type)}</span>
         <div class="post-sub">@${esc(p.handle)} · <span class="cat">${esc(p.cat)}</span> · ${esc(placeFor(p))} · ${timeAgo(p.createdAt)}</div>
@@ -647,7 +762,7 @@ function postHTML(p) {
     </div>
     <p class="post-body">${esc(p.body)}</p>
     ${tags.length ? `<div class="post-tags">${tags.map((t) => `<span>#${esc(t)}</span>`).join('')}</div>` : ''}
-    ${img ? `<img class="post-img" src="${esc(img)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}
+    ${img ? `<div class="post-media"><img class="post-img" src="${esc(img)}" alt="" loading="lazy" referrerpolicy="no-referrer"${posOf(p.imgPos) ? ` style="${esc(posCss(p.imgPos))}"` : ''}></div>` : ''}
     <div class="post-actions">
       <button class="act ${liked ? 'on' : ''}" data-act="like" aria-pressed="${liked}" aria-label="Me gusta"><i data-lucide="heart"></i> ${Math.max(0, p.likesCount || 0)}</button>
       <button class="act" data-act="comment" aria-label="Comentarios"><i data-lucide="message-circle"></i> ${Math.max(0, p.commentsCount || 0)}</button>
@@ -801,7 +916,7 @@ $('#myPosts').addEventListener('click', (e) => onPostAction(e, renderProfile));
 
 /* Si una imagen (URL externa) no carga, se oculta en vez de mostrarse rota */
 document.addEventListener('error', (e) => {
-  if (e.target?.matches?.('img.post-img, img.preview')) e.target.hidden = true;
+  if (e.target?.matches?.('img.post-img, img.preview')) { e.target.hidden = true; if (e.target.parentElement.classList.contains('post-media')) e.target.parentElement.hidden = true; }
 }, true);
 
 /* ============================================================
@@ -872,7 +987,7 @@ function renderResults() {
         const f = state.following.has(b.uid), me = b.uid === ME.uid;
         const isNew = toMs(b.createdAt) > monthAgo;
         return `<article class="card biz" data-uid="${esc(b.uid)}" data-user="${esc(b.uid)}">
-          ${avatarHTML(b.name, 'md', b.avatar)}
+          ${avatarHTML(b.name, 'md', b.avatar, b.avatarPos)}
           <div class="biz-info"><strong>${esc(b.name)}</strong>${vbadge(b)} ${isNew ? '<span class="badge">Nuevo</span>' : ''}${me ? ' <span class="badge neutral">Tú</span>' : ''}
             <p>${esc(b.bio || b.role || '')}</p><small>${esc(b.category)} · ${esc(placeText(b))}</small>${quickLinks(b.socials)}</div>
           ${me ? '' : `<div class="biz-actions"><button class="btn btn-sm ${f ? 'btn-soft' : 'btn-outline'}" data-follow="${esc(b.uid)}">${f ? 'Siguiendo' : 'Seguir'}</button>
@@ -915,10 +1030,15 @@ $('#postBody').addEventListener('input', (e) => {
   $('#counter').textContent = `${e.target.value.length} / 500`;
   $('#publishBtn').disabled = e.target.value.trim().length < 3;
 });
-watchImageInput($('#postImgUrl'), $('#postImgStatus'), (u) => {
-  const img = $('#preview');
-  if (u) { img.hidden = false; img.src = u; } else { img.hidden = true; img.removeAttribute('src'); }
-});
+const POST = { url: '', pos: null };
+function setPreview(u) {
+  POST.url = u || '';
+  const img = $('#preview'), box = $('#previewBox');
+  if (u) { box.hidden = false; img.hidden = false; if (img.getAttribute('src') !== u) img.src = u; img.style.cssText = posCss(POST.pos); }
+  else { box.hidden = true; img.hidden = true; img.removeAttribute('src'); }
+}
+watchImageInput($('#postImgUrl'), $('#postImgStatus'), setPreview);
+const postAdj = wireAdjust({ input: $('#postImgUrl'), btn: $('#postImgAdj'), kind: 'photo', get: () => POST.pos, set: (p) => { POST.pos = p; setPreview(POST.url); } });
 $('#postForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const body = $('#postBody').value.trim();
@@ -929,7 +1049,7 @@ $('#postForm').addEventListener('submit', async (e) => {
   const tags = $('#postTags').value.split(',').map((t) => t.trim().replace(/^#/, '').slice(0, 30)).filter(Boolean).slice(0, 5);
   const post = {
     authorUid: ME.uid, handle: ME.handle, name: ME.name, avatar: cleanUrl(ME.avatar),
-    cat: $('#postCat').value, ...placeParts(ME), type: state.postType, body, tags, imageUrl,
+    cat: $('#postCat').value, ...placeParts(ME), type: state.postType, body, tags, imageUrl, ...(imageUrl && POST.pos ? { imgPos: POST.pos } : {}),
     likesCount: 0, commentsCount: 0, createdAt: serverTimestamp(),
   };
   const btn = $('#publishBtn');
@@ -941,7 +1061,7 @@ $('#postForm').addEventListener('submit', async (e) => {
     data.mine.unshift({ ...local });
     e.target.reset();
     state.postType = 'General';
-    $('#preview').hidden = true; $('#counter').textContent = '0 / 500';
+    POST.pos = null; setPreview(''); postAdj.sync(); $('#counter').textContent = '0 / 500';
     renderTypeChips();
     toast('Publicación creada');
     state.feedTab = 'recientes';
@@ -1312,9 +1432,9 @@ function renderCmPosts() {
   }
   box.innerHTML = ctx.posts.map((p) => {
     const key = cmKey(ctx.id, p.id), liked = state.liked.has(key), mine = p.authorUid === ME.uid;
-    const link = cleanUrl(p.link);
+    const link = cleanUrl(p.link), au = liveUser(p.authorUid, null);
     return `<article class="card cm-post" data-id="${esc(p.id)}">
-      <div class="post-head">${avatarHTML(p.authorName, 'md', p.authorAvatar)}
+      <div class="post-head">${avatarHTML(p.authorName, 'md', (au && au.avatar) || p.authorAvatar, au && au.avatar ? au.avatarPos : null)}
         <div class="post-who"><strong>${esc(p.authorName)}</strong>${vbadge(liveUser(p.authorUid))}<div class="post-sub">@${esc(p.authorHandle || '')} · ${p.createdAt ? timeAgo(p.createdAt) : 'ahora'}</div></div></div>
       <p class="post-body">${esc(p.body)}</p>
       ${link ? `<a class="cm-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer"><i data-lucide="external-link"></i> ${esc(link.replace(/^https:\/\//, '').slice(0, 60))}</a>` : ''}
@@ -1413,7 +1533,7 @@ function renderCmMembers() {
   box.innerHTML = ctx.members.map((m) => {
     const me = m.uid === ME.uid, f = state.following.has(m.uid), lv = liveUser(m.uid, m), name = lv.name || m.name || 'Miembro';
     return `<article class="card cm-member" data-uid="${esc(m.uid)}" data-user="${esc(m.uid)}">
-      ${avatarHTML(name, 'md', lv.avatar)}
+      ${avatarHTML(name, 'md', lv.avatar, lv.avatarPos)}
       <div class="biz-info"><strong>${esc(name)}</strong>${vbadge(lv)}${m.uid === ctx.c.ownerUid ? ' <span class="badge">Admin</span>' : ''}${me ? ' <span class="badge neutral">Tú</span>' : ''}
         <p>${m.handle ? `@${esc(m.handle)}` : ''}</p>
         <small>${esc([m.category, placeText(m)].filter(Boolean).join(' · '))}</small>${quickLinks(m.socials)}</div>
@@ -1627,10 +1747,10 @@ function renderUser() {
   const [c1, c2] = colorsFor(u.name);
   const av = $('#uAvatar');
   av.style.setProperty('--c1', c1); av.style.setProperty('--c2', c2); av.classList.remove('loaded');
-  av.innerHTML = esc(initials(u.name)) + avatarImg(cleanUrl(u.avatar));
+  av.innerHTML = esc(initials(u.name)) + avatarImg(cleanUrl(u.avatar), u.avatarPos);
   const cover = cleanUrl(u.cover);
   $('#uCover').style.setProperty('--c1', c1); $('#uCover').style.setProperty('--c2', c2);
-  $('#uCover').style.setProperty('--img', cover ? cssUrl(cover) : 'none');
+  setCover($('#uCover'), cover, u.coverPos);
   $('#uName').textContent = u.name || 'Emprendedor';
   $('#uVerified').innerHTML = vbadge(u);
   $('#uCat').textContent = u.category || ''; $('#uCat').hidden = !u.category;
@@ -1706,7 +1826,7 @@ function renderProfile() {
   const cover = cleanUrl(ME.cover);
   const [cc1, cc2] = colorsFor(ME.name);   // sin portada: fondo con los mismos colores del nombre que la foto de perfil
   $('#cover').style.setProperty('--c1', cc1); $('#cover').style.setProperty('--c2', cc2);
-  $('#cover').style.setProperty('--img', cover ? cssUrl(cover) : 'none');
+  setCover($('#cover'), cover, ME.coverPos);
   $('#stFollowers').textContent = Math.max(0, ME.followersCount || 0);
   $('#stFollowing').textContent = state.following.size;
   const left = FOLLOWERS_TO_CREATE - followersNow();
@@ -1766,6 +1886,8 @@ $('#editBtn').addEventListener('click', () => {
   $('#eColonia').value = ME.colonia || '';
   $('#eAvatar').value = ME.avatar || '';
   $('#eCover').value = ME.cover || '';
+  EDIT.avatarPos = posOf(ME.avatarPos); EDIT.coverPos = posOf(ME.coverPos);
+  editAvatarAdj.sync(); editCoverAdj.sync();
   editAvatarWatch.clear(); editCoverWatch.clear();
   $('#editError').hidden = true;
   openModal($('#editSheet'), '#editClose');
@@ -1774,6 +1896,9 @@ $('#editClose').addEventListener('click', () => closeModal($('#editSheet')));
 $('#editSheet').addEventListener('click', (e) => { if (e.target.id === 'editSheet') closeModal($('#editSheet')); });
 const editAvatarWatch = watchImageInput($('#eAvatar'), $('#eAvatarStatus'));
 const editCoverWatch = watchImageInput($('#eCover'), $('#eCoverStatus'));
+const EDIT = { avatarPos: null, coverPos: null };
+const editAvatarAdj = wireAdjust({ input: $('#eAvatar'), btn: $('#eAvatarAdj'), kind: 'round', get: () => EDIT.avatarPos, set: (p) => (EDIT.avatarPos = p) });
+const editCoverAdj = wireAdjust({ input: $('#eCover'), btn: $('#eCoverAdj'), kind: 'wide', get: () => EDIT.coverPos, set: (p) => (EDIT.coverPos = p) });
 $('#editSave').addEventListener('click', async () => {
   const err = $('#editError');
   const fail = (m) => { err.textContent = m; err.hidden = false; };
@@ -1789,6 +1914,7 @@ $('#editSave').addEventListener('click', async () => {
     await saveProfile({
       name, category: $('#eCat').value, role: $('#eRole').value, bio: $('#eBio').value.trim(),
       ...place, avatar, cover,
+      avatarPos: avatar ? EDIT.avatarPos : null, coverPos: cover ? EDIT.coverPos : null,
     });
     closeModal($('#editSheet'));
     toast('Perfil actualizado');
@@ -1822,7 +1948,7 @@ const otherOf = (c) => {
   const uid = (c.members || []).find((m) => m !== ME.uid) || '';
   const saved = (c.people || {})[uid] || { name: 'Emprendedor' };
   const live = uCache.get(uid);
-  return { uid, ...saved, ...(live ? { name: live.name || saved.name, avatar: live.avatar || '' , handle: live.handle || saved.handle, verified: live.verified === true } : {}) };
+  return { uid, ...saved, ...(live ? { name: live.name || saved.name, avatar: live.avatar || '' , avatarPos: live.avatarPos, handle: live.handle || saved.handle, verified: live.verified === true } : {}) };
 };
 /* Para quien envió la solicitud, "rechazada" se ve igual que "pendiente" */
 const isPendingForMe = (c) => c.status === 'pending' && c.requesterUid !== ME.uid;
@@ -1950,7 +2076,7 @@ function renderNotifs() {
     const isNew = !n.read || NOTIF.hl.has(n.id);
     const where = n.targetName ? ` · <em>${esc(n.targetName)}</em>` : '';
     return `<a class="card chat-row ${isNew ? 'notif-new' : ''}" href="${esc(notifHref(n))}">
-      <span class="notif-ic">${avatarHTML(name, 'md', lv.avatar || n.fromAvatar)}<span class="mini"><i data-lucide="${meta[0]}"></i></span></span>
+      <span class="notif-ic">${avatarHTML(name, 'md', lv.avatar || n.fromAvatar, lv.avatar ? lv.avatarPos : null)}<span class="mini"><i data-lucide="${meta[0]}"></i></span></span>
       <div class="chat-main"><div class="chat-top"><span class="notif-txt"><strong>${esc(name)}</strong>${vbadge(lv)} ${meta[1]}${where}</span><time>${n.at ? timeAgo(n.at) : ''}</time></div></div>
       ${isNew ? '<span class="unread-dot" aria-label="Nueva"></span>' : ''}</a>`;
   }).join('');
@@ -1983,7 +2109,7 @@ function renderInbox() {
     const o = otherOf(c), unread = isUnread(c);
     const waiting = c.status !== 'accepted' && c.requesterUid === ME.uid;
     return `<a class="card chat-row ${unread ? 'unread' : ''}" href="#chat/${esc(c.id)}">
-      ${avatarHTML(o.name, 'md', o.avatar)}
+      ${avatarHTML(o.name, 'md', o.avatar, o.avatarPos)}
       <div class="chat-main">
         <div class="chat-top"><strong>${esc(o.name)}</strong>${vbadge(o)}<time>${c.lastAt ? timeAgo(c.lastAt) : ''}</time></div>
         <div class="chat-txt"><span class="chat-prev">${c.lastSender === ME.uid ? 'Tú: ' : ''}${esc(c.lastText || '')}</span>
@@ -2021,7 +2147,7 @@ async function showChat(id) {
     ]);
     if (chat.ctx !== ctx) return;
     if (!u.exists()) { toast('No encontramos a esta persona'); location.replace('#mensajes'); return; }
-    ctx.other = { uid: otherUid, ...pinfo(u.data()) };
+    ctx.other = { uid: otherUid, ...pinfo(u.data()), avatarPos: u.data().avatarPos };
     ctx.theyFollowMe = !!(f && f.exists());
   } catch (e) {
     console.error(e); toast(authError(e)); location.replace('#mensajes'); return;
@@ -2060,7 +2186,7 @@ function renderChat() {
   const ctx = chat.ctx; if (!ctx || !ctx.other) return;
   const o = ctx.other, c = ctx.chat;
   $('#chatWho').dataset.user = o.uid;
-  $('#chatWho').innerHTML = `${avatarHTML(o.name, 'sm', o.avatar)}<div style="min-width:0"><strong>${esc(o.name)}</strong>${vbadge(o)}${o.handle ? `<small>@${esc(o.handle)}</small>` : ''}</div>`;
+  $('#chatWho').innerHTML = `${avatarHTML(o.name, 'sm', o.avatar, o.avatarPos)}<div style="min-width:0"><strong>${esc(o.name)}</strong>${vbadge(o)}${o.handle ? `<small>@${esc(o.handle)}</small>` : ''}</div>`;
   const blocked = state.blocked.has(o.uid);
   $('#chatBlock').textContent = blocked ? 'Desbloquear' : 'Bloquear';
 
@@ -2468,10 +2594,14 @@ const REG_TOTAL = 4;
 const REG = { step: 1, handleTouched: false, social: createSocialEditor($('#regSocials')) };
 const slug = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 20);
 
-function previewPick(box, url) {
+function previewPick(box, url, pos) {
   const u = cleanUrl(url);
-  box.style.backgroundImage = u ? cssUrl(u) : '';
-  box.classList.toggle('has-img', !!u);
+  let im = box.querySelector('.pick-img');
+  if (!u) { if (im) im.remove(); box.classList.remove('has-img'); return; }
+  if (!im) { im = document.createElement('img'); im.className = 'pick-img'; im.alt = ''; im.referrerPolicy = 'no-referrer'; box.prepend(im); }
+  if (im.getAttribute('src') !== u) im.src = u;
+  im.style.cssText = posCss(pos);
+  box.classList.add('has-img');
 }
 function showStep(n) {
   REG.step = n;
@@ -2511,8 +2641,11 @@ async function validateStep(n) {
 }
 $('#rName').addEventListener('input', (e) => { if (!REG.handleTouched) $('#rHandle').value = slug(e.target.value); });
 $('#rHandle').addEventListener('input', (e) => { REG.handleTouched = true; e.target.value = e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''); });
-const regAvatarWatch = watchImageInput($('#rAvatarUrl'), $('#rAvatarStatus'), (u) => previewPick($('#avatarPick'), u));
-const regCoverWatch = watchImageInput($('#rCoverUrl'), $('#rCoverStatus'), (u) => previewPick($('#coverPick'), u));
+const regImg = { avatar: { url: '', pos: null }, cover: { url: '', pos: null } };
+const regAvatarWatch = watchImageInput($('#rAvatarUrl'), $('#rAvatarStatus'), (u) => { regImg.avatar.url = u; previewPick($('#avatarPick'), u, regImg.avatar.pos); });
+const regCoverWatch = watchImageInput($('#rCoverUrl'), $('#rCoverStatus'), (u) => { regImg.cover.url = u; previewPick($('#coverPick'), u, regImg.cover.pos); });
+const regAvatarAdj = wireAdjust({ input: $('#rAvatarUrl'), btn: $('#rAvatarAdj'), kind: 'round', get: () => regImg.avatar.pos, set: (p) => { regImg.avatar.pos = p; previewPick($('#avatarPick'), regImg.avatar.url, p); } });
+const regCoverAdj = wireAdjust({ input: $('#rCoverUrl'), btn: $('#rCoverAdj'), kind: 'wide', get: () => regImg.cover.pos, set: (p) => { regImg.cover.pos = p; previewPick($('#coverPick'), regImg.cover.url, p); } });
 $('#regBack').addEventListener('click', () => (REG.step > 1 ? showStep(REG.step - 1) : (location.hash = 'landing')));
 $('#skipSocials').addEventListener('click', () => { REG.social.reset({}); showStep(4); });
 
@@ -2521,6 +2654,8 @@ function resetRegForm() {
   REG.handleTouched = false;
   REG.social.reset({});
   previewPick($('#avatarPick'), ''); previewPick($('#coverPick'), '');
+  regImg.avatar = { url: '', pos: null }; regImg.cover = { url: '', pos: null };
+  regAvatarAdj.sync(); regCoverAdj.sync();
   regAvatarWatch.clear(); regCoverWatch.clear();
   showStep(1);
 }
@@ -2545,6 +2680,8 @@ $('#regForm').addEventListener('submit', async (e) => {
       ...place,
       since: new Date().getFullYear(),
       avatar: avatarUrl, cover: coverUrl,
+      ...(avatarUrl && regImg.avatar.pos ? { avatarPos: regImg.avatar.pos } : {}),
+      ...(coverUrl && regImg.cover.pos ? { coverPos: regImg.cover.pos } : {}),
       socials: REG.social.validate().values, followersCount: 0,
     };
 
