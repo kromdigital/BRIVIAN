@@ -12,6 +12,7 @@ import {
   doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc,
   query, where, orderBy, limit, limitToLast, startAfter, writeBatch, runTransaction, serverTimestamp, increment, onSnapshot,
 } from './firebase.js';
+import { GEO, COUNTRIES } from './geo.js';
 
 /* ---------- Utilidades ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -210,13 +211,6 @@ const CATEGORIES = [
   { id: 'educacion', name: 'Educación', desc: 'Cursos, talleres y formación', icon: 'book-open' },
   { id: 'bienestar', name: 'Bienestar', desc: 'Salud, naturaleza y cuidado personal', icon: 'leaf' },
 ];
-const CITIES = ['Guadalajara', 'Zapopan', 'Tonalá', 'Tlaquepaque', 'Tlajomulco'];   // sugerencias para Jalisco
-const COUNTRIES = ['México', 'Argentina', 'Bolivia', 'Brasil', 'Canadá', 'Chile', 'Colombia', 'Costa Rica', 'Cuba', 'Ecuador', 'El Salvador',
-  'España', 'Estados Unidos', 'Guatemala', 'Honduras', 'Nicaragua', 'Panamá', 'Paraguay', 'Perú', 'Puerto Rico', 'República Dominicana', 'Uruguay', 'Venezuela'];
-const MX_STATES = ['Aguascalientes', 'Baja California', 'Baja California Sur', 'Campeche', 'Chiapas', 'Chihuahua', 'Ciudad de México', 'Coahuila', 'Colima',
-  'Durango', 'Estado de México', 'Guanajuato', 'Guerrero', 'Hidalgo', 'Jalisco', 'Michoacán', 'Morelos', 'Nayarit', 'Nuevo León', 'Oaxaca', 'Puebla',
-  'Querétaro', 'Quintana Roo', 'San Luis Potosí', 'Sinaloa', 'Sonora', 'Tabasco', 'Tamaulipas', 'Tlaxcala', 'Veracruz', 'Yucatán', 'Zacatecas'];
-
 /* ---------- Ubicación: país · estado o región · ciudad ---------- */
 const norm = (s) => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
 const isMX = (c) => norm(c) === 'mexico';
@@ -229,20 +223,120 @@ const placeParts = (o = {}) => ({
 });
 const placeText = (o) => { const p = placeParts(o); return [p.municipio, p.state, isMX(p.country) ? '' : p.country].filter(Boolean).join(', '); };
 const buildCity = ({ colonia, municipio, state, country }) => [colonia, municipio, state, isMX(country) ? '' : country].filter(Boolean).join(', ');
-const sameCity = (a, b) => { const x = placeParts(a), y = placeParts(b); return !!x.municipio && norm(x.municipio) === norm(y.municipio) && norm(x.country) === norm(y.country); };
-function fillPlaceLists(prefix) {
-  const country = $(`#${prefix}Country`).value, state = $(`#${prefix}State`).value;
-  $('#dlStates').innerHTML = isMX(country) ? MX_STATES.map((x) => `<option value="${esc(x)}"></option>`).join('') : '';
-  $('#dlCities').innerHTML = isMX(country) && norm(state) === 'jalisco' ? CITIES.map((x) => `<option value="${esc(x)}"></option>`).join('') : '';
+const sameCity = (a, b) => {
+  const x = placeParts(a), y = placeParts(b);
+  return !!x.municipio && norm(x.municipio) === norm(y.municipio) && norm(x.country) === norm(y.country)
+    && (!x.state || !y.state || norm(x.state) === norm(y.state));
+};
+/* ---- Formulario de ubicación con listas: país → estado o región → ciudad ----
+   Los países con lista (GEO) se eligen de menús; en otros países el estado y la ciudad se escriben.
+   Siempre existe "Otra ciudad…" / "Otro país…" por si la tuya no aparece. */
+const OTHER = '__other';
+const optHTML = (v, l = v) => `<option value="${esc(v)}">${esc(l)}</option>`;
+const placeFieldsHTML = (p) => `
+  <label class="field-label" for="${p}Country">País</label>
+  <select class="select" id="${p}Country"></select>
+  <input class="input" id="${p}CountryOther" maxlength="60" autocomplete="off" placeholder="Escribe tu país" hidden>
+  <label class="field-label" for="${p}State" id="${p}StateLbl">Estado o región</label>
+  <select class="select" id="${p}State"></select>
+  <input class="input" id="${p}StateTxt" maxlength="60" autocomplete="off" placeholder="Estado o región (opcional)" hidden>
+  <label class="field-label" for="${p}Muni">Ciudad o municipio</label>
+  <select class="select" id="${p}Muni"></select>
+  <input class="input" id="${p}MuniTxt" maxlength="60" autocomplete="off" placeholder="Escribe tu ciudad o municipio" hidden>`;
+const pf = (p) => ({
+  cSel: $(`#${p}Country`), cOth: $(`#${p}CountryOther`), sSel: $(`#${p}State`), sTxt: $(`#${p}StateTxt`),
+  mSel: $(`#${p}Muni`), mTxt: $(`#${p}MuniTxt`), sLbl: $(`#${p}StateLbl`),
+});
+const findIn = (list, v) => list.find((x) => norm(x) === norm(v));
+/* Redibuja estado y ciudad según el país (y estado) elegidos. `want` conserva valores al editar. */
+function paintPlace(p, want = {}) {
+  const { cSel, cOth, sSel, sTxt, mSel, mTxt, sLbl } = pf(p);
+  const country = cSel.value === OTHER ? '' : cSel.value;
+  cOth.hidden = cSel.value !== OTHER;
+  const tree = GEO[country];
+  // estado o región
+  if (tree) {
+    const states = Object.keys(tree);
+    const prev = want.state != null ? want.state : sSel.value;
+    const hit = findIn(states, prev);
+    sSel.hidden = false; sTxt.hidden = true; sSel.disabled = false;
+    sSel.innerHTML = optHTML('', 'Elige tu estado o región') + states.map((x) => optHTML(x)).join('')
+      + (prev && !hit ? optHTML(prev) : '');
+    sSel.value = hit || (prev || '');
+    sLbl.innerHTML = 'Estado o región';
+  } else if (!cSel.value) {
+    sSel.hidden = false; sTxt.hidden = true; sSel.disabled = true;
+    sSel.innerHTML = optHTML('', 'Primero elige tu país'); sLbl.innerHTML = 'Estado o región';
+  } else {
+    sSel.hidden = true; sSel.innerHTML = ''; sTxt.hidden = false;
+    if (want.state != null) sTxt.value = want.state;
+    sLbl.innerHTML = 'Estado o región <span class="muted">(opcional)</span>';
+  }
+  // ciudad
+  const state = !sSel.hidden ? sSel.value : '';
+  const cities = tree && state && tree[findIn(Object.keys(tree), state)];
+  if (cities) {
+    const prev = want.municipio != null ? want.municipio : (mSel.value === OTHER ? '' : mSel.value);
+    const hit = findIn(cities, prev);
+    mSel.hidden = false; mSel.disabled = false;
+    mSel.innerHTML = optHTML('', 'Elige tu ciudad o municipio') + cities.map((x) => optHTML(x)).join('') + optHTML(OTHER, 'Otra ciudad…');
+    if (hit) { mSel.value = hit; mTxt.hidden = true; }
+    else if (prev) { mSel.value = OTHER; mTxt.hidden = false; mTxt.value = prev; }
+    else { mSel.value = ''; mTxt.hidden = true; }
+  } else if (tree) {
+    mSel.hidden = false; mSel.disabled = true; mTxt.hidden = true;
+    mSel.innerHTML = optHTML('', 'Primero elige tu estado o región');
+  } else {
+    mSel.hidden = true; mSel.innerHTML = ''; mTxt.hidden = !cSel.value;
+    if (want.municipio != null) mTxt.value = want.municipio;
+  }
 }
+/* Ciudades sugeridas del estado de la persona (para crear comunidades por ciudad) */
+function citiesOfMe() {
+  const p = placeParts(ME), t = GEO[p.country];
+  return (t && t[findIn(Object.keys(t), p.state) || '']) || [];
+}
+function wirePlace(p) {
+  $(`#${p}Place`).innerHTML = placeFieldsHTML(p);
+  const { cSel, cOth, sSel, mSel, mTxt } = pf(p);
+  const main = Object.keys(GEO), rest = COUNTRIES.filter((c) => !main.includes(c)).sort((x, y) => x.localeCompare(y, 'es'));
+  cSel.innerHTML = optHTML('', 'Elige tu país') + main.map((c) => optHTML(c)).join('')
+    + `<optgroup label="Otros países">${rest.map((c) => optHTML(c)).join('')}</optgroup>` + optHTML(OTHER, 'Otro país…');
+  cSel.addEventListener('change', () => { paintPlace(p, { state: '', municipio: '' }); if (cSel.value === OTHER) cOth.focus(); });
+  sSel.addEventListener('change', () => paintPlace(p, { municipio: '' }));
+  mSel.addEventListener('change', () => { mTxt.hidden = mSel.value !== OTHER; if (!mTxt.hidden) mTxt.focus(); });
+  paintPlace(p);
+}
+/* Para "Editar perfil": pone el lugar actual (también perfiles antiguos con texto libre) */
+function setPlace(p, place) {
+  const { cSel, cOth } = pf(p);
+  const hit = findIn(COUNTRIES, place.country);
+  if (hit) { cSel.value = hit; cOth.value = ''; }
+  else if (place.country) { cSel.value = OTHER; cOth.value = place.country; }
+  else { cSel.value = ''; cOth.value = ''; }
+  paintPlace(p, { state: place.state || '', municipio: place.municipio || '' });
+}
+/* Texto escrito a mano: espacios limpios y, si viene todo en minúsculas, con mayúscula inicial ("laredo" → "Laredo") */
+const tidy = (s) => {
+  const t = String(s || '').trim().replace(/\s+/g, ' ');
+  return t && t === t.toLowerCase() ? t.replace(/(^|\s)(\S)/g, (m, sp, ch, off) => (off > 0 && /^(de|del|la|las|los|y|e)$/.test(t.slice(off + sp.length).split(' ')[0]) ? m : sp + ch.toUpperCase())) : t;
+};
 function readPlace(prefix) {
-  const country = canon($(`#${prefix}Country`).value, COUNTRIES);
-  const state = canon($(`#${prefix}State`).value, isMX(country) ? MX_STATES : []);
-  const municipio = canon($(`#${prefix}Muni`).value, CITIES);
+  const { cSel, cOth, sSel, sTxt, mSel, mTxt } = pf(prefix);
+  const country = cSel.value === OTHER ? canon(tidy(cOth.value), COUNTRIES) : cSel.value;
+  const state = !sSel.hidden ? sSel.value : tidy(sTxt.value);
+  const raw = !mSel.hidden ? (mSel.value === OTHER ? mTxt.value : mSel.value) : mTxt.value;
+  const tree = GEO[country], cities = tree && tree[findIn(Object.keys(tree), state) || ''];
+  const municipio = canon(tidy(raw), cities || []);
   const colonia = $(`#${prefix}Colonia`).value.trim();
   return { country, state, municipio, colonia, city: buildCity({ colonia, municipio, state, country }) };
 }
-const placeError = (p) => (p.country.length < 2 ? 'Elige o escribe tu país.' : p.municipio.length < 2 ? 'Escribe tu ciudad o municipio para que te encuentren cerca.' : '');
+function placeError(p) {
+  if (p.country.length < 2) return 'Elige tu país.';
+  if (GEO[p.country] && !p.state) return 'Elige tu estado o región.';
+  if (p.municipio.length < 2) return 'Elige tu ciudad o municipio (o escríbela en "Otra ciudad") para que te encuentren cerca.';
+  return '';
+}
 
 const POST_TYPES = [
   { id: 'General', icon: 'pen-line' }, { id: 'Producto', icon: 'shopping-bag' }, { id: 'Servicio', icon: 'briefcase' },
@@ -251,22 +345,12 @@ const POST_TYPES = [
 ];
 /* Comunidades iniciales: las carga un admin con un botón (ver "admins" en las instrucciones) */
 const COMMUNITY_SEED = [
-  { id: 'c1', name: 'Emprendedores de Guadalajara', kind: 'ciudad', tag: 'Guadalajara', desc: 'Un espacio para compartir retos, dudas y colaboraciones entre negocios de la ciudad.', tone: 1 },
-  { id: 'c2', name: 'Emprendedores de Zapopan', kind: 'ciudad', tag: 'Zapopan', desc: 'Conecta con negocios de Zapopan y organiza encuentros de apoyo mutuo.', tone: 4 },
-  { id: 'c3', name: 'Emprendedores de Tonalá', kind: 'ciudad', tag: 'Tonalá', desc: 'Artesanos, cocinas y talleres de Tonalá impulsándose entre sí.', tone: 2 },
   { id: 'c4', name: 'Gastronomía local', kind: 'sector', tag: 'Gastronomía', desc: 'Cocinas, cafés y repostería: proveedores, recetas y eventos.', tone: 3 },
   { id: 'c5', name: 'Moda y textiles', kind: 'sector', tag: 'Moda', desc: 'Diseñadores y talleres que comparten técnicas y proveedores.', tone: 3 },
   { id: 'c6', name: 'Tecnología y datos', kind: 'sector', tag: 'Tecnología', desc: 'Desarrolladores y creadores de software ayudando a negocios locales.', tone: 4 },
   { id: 'c7', name: 'Arte y creatividad', kind: 'sector', tag: 'Arte y creatividad', desc: 'Fotografía, diseño y oficios: portafolios, retos y colaboraciones.', tone: 1 },
   { id: 'c8', name: 'Bienestar y salud', kind: 'sector', tag: 'Bienestar', desc: 'Terapias, nutrición y cuidado personal con enfoque responsable.', tone: 2 },
 ];
-/* Tarjetas de la landing (diseño). Para fotos reales: img: 'https://…' */
-const LANDING_COMMUNITIES = [
-  { name: 'Emprendedores de Guadalajara', tag: 'Guadalajara', members: 1284, posts: 312, img: '', f1: '#7a4a2b', f2: '#d9a066' },
-  { name: 'Gastronomía de Jalisco', tag: 'Guadalajara', members: 876, posts: 244, img: '', f1: '#2f4a2f', f2: '#a8672f' },
-  { name: 'Diseño y creatividad', tag: 'Guadalajara', members: 642, posts: 187, img: '', f1: '#3a3a4a', f2: '#c9a37a' },
-];
-
 /* ---------- Estado ---------- */
 let ME = null;          // perfil del usuario con sesión (users/{uid})
 let IS_ADMIN = false;
@@ -403,6 +487,7 @@ function route() {
     requestAnimationFrame(() => document.getElementById(v)?.scrollIntoView());
   } else {
     window.scrollTo(0, 0);
+    loadLandingCommunities();
   }
   $('#landMenu').hidden = true;
   $('#menuBtn').setAttribute('aria-expanded', 'false');
@@ -428,13 +513,32 @@ function renderLandingCategories() {
       <span class="cat-ico"><i data-lucide="${c.icon}"></i></span>
       <h3>${esc(c.name)}</h3><p>${esc(c.desc)}</p></a>`).join('');
 }
+/* "Mejor en compañía": las comunidades que crearon los usuarios (más miembros primero) */
+const landing = { list: null, at: 0, loading: false, error: false };
+async function loadLandingCommunities(force = false) {
+  if (landing.loading || (!force && landing.list && Date.now() - landing.at < 60000)) return;
+  landing.loading = true; renderLandingCommunities();
+  try {
+    const s = await getDocs(query(collection(db, 'communities'), orderBy('createdAt', 'desc'), limit(40)));
+    landing.list = s.docs.map((d) => ({ id: d.id, ...d.data() })).filter((c) => c.ownerUid)
+      .sort((x, y) => (y.membersCount || 0) - (x.membersCount || 0) || toMs(y.createdAt) - toMs(x.createdAt)).slice(0, 3);
+    landing.error = false; landing.at = Date.now();
+  } catch (e) { console.debug('landing communities', e && e.code); landing.error = true; if (!landing.list) landing.list = []; }
+  landing.loading = false; renderLandingCommunities();
+}
 function renderLandingCommunities() {
-  const fmt = (n) => n.toLocaleString('es-MX');
-  $('#landCom').innerHTML = LANDING_COMMUNITIES.map((c) => {
-    const img = cleanUrl(c.img);
-    return `<a class="com-hero" href="#comunidad" style="--f1:${c.f1};--f2:${c.f2};${img ? `--img:${esc(cssUrl(img))}` : ''}">
-      <small>${esc(c.tag)}</small><h3>${esc(c.name)}</h3>
-      <span class="meta-line">${fmt(c.members)} miembros · ${fmt(c.posts)} publicaciones</span></a>`;
+  const box = $('#landCom'); if (!box) return;
+  if (!landing.list) { box.innerHTML = '<p class="muted">Cargando comunidades…</p>'; return; }
+  if (!landing.list.length) {
+    box.innerHTML = `<p class="muted">${landing.error ? 'No pudimos cargar las comunidades ahora. Intenta de nuevo en un momento.' : 'Aún no hay comunidades creadas por la gente. Con 10 seguidores puedes crear la primera.'}</p>`;
+    return;
+  }
+  const kinds = { sector: 'Sector', ciudad: 'Ciudad', grupo: 'Grupo' };
+  box.innerHTML = landing.list.map((c) => {
+    const [f1, f2] = colorsFor(c.name), n = c.membersCount || 0;
+    return `<a class="com-hero" href="#comunidad/${esc(c.id)}" style="--f1:${f1};--f2:${f2}">
+      <small>${esc([kinds[c.kind] || 'Comunidad', c.tag].filter(Boolean).join(' · '))}</small><h3>${esc(c.name)}</h3>
+      <span class="meta-line">${n.toLocaleString('es-MX')} ${n === 1 ? 'miembro' : 'miembros'}${c.ownerName ? ` · Creada por ${esc(c.ownerName)}` : ''}</span></a>`;
   }).join('');
 }
 /* Logo: siempre regresa al bloque inicial de la landing */
@@ -458,16 +562,12 @@ function fillSelects() {
   $('#feedCat').innerHTML = `<option value="all">Todas las categorías</option>${catOpts}`;
   $('#exCat').innerHTML = `<option value="all">Todas las categorías</option>${catOpts}`;
   $('#exCity').innerHTML = '<option value="all">Todas las ubicaciones</option>';
-  $('#dlCountries').innerHTML = COUNTRIES.map((x) => `<option value="${esc(x)}"></option>`).join('');
   $('#postCat').innerHTML = catOpts;
   $('#rCat').innerHTML = catOpts;
   $('#eCat').innerHTML = catOpts;
 }
 
-['r', 'e'].forEach((p) => ['Country', 'State'].forEach((f) => {
-  $(`#${p}${f}`).addEventListener('input', () => fillPlaceLists(p));
-  $(`#${p}${f}`).addEventListener('focus', () => fillPlaceLists(p));
-}));
+['r', 'e'].forEach(wirePlace);
 
 /* ---------- Datos del usuario en la interfaz ---------- */
 function applyMe() {
@@ -862,7 +962,7 @@ function renderCreateBox() {
 }
 function fillCommTags() {
   const kind = $('#cKind').value;
-  const opts = kind === 'ciudad' ? [...new Set([placeParts(ME).municipio, ...CITIES].filter(Boolean))] : kind === 'grupo' ? ['General', ...CATEGORIES.map((c) => c.name)] : CATEGORIES.map((c) => c.name);
+  const opts = kind === 'ciudad' ? [...new Set([placeParts(ME).municipio, ...citiesOfMe()].filter(Boolean))] : kind === 'grupo' ? ['General', ...CATEGORIES.map((c) => c.name)] : CATEGORIES.map((c) => c.name);
   $('#cTag').innerHTML = opts.map((o) => `<option>${esc(o)}</option>`).join('');
 }
 $('#cKind').addEventListener('change', fillCommTags);
@@ -1590,6 +1690,8 @@ function showPerfil() {
 async function saveProfile(changes) {
   await updateDoc(doc(db, 'users', ME.uid), changes);
   Object.assign(ME, changes);
+  data.peopleAt = 0;                                            // Explorar vuelve a leer perfiles (ubicación, foto…)
+  const mine = data.people.find((x) => x.uid === ME.uid); if (mine) Object.assign(mine, changes);
   applyMe();
   renderProfile();
 }
@@ -1625,8 +1727,7 @@ $('#editBtn').addEventListener('click', () => {
   $('#eRole').value = ME.role;
   $('#eBio').value = ME.bio || '';
   const pl = placeParts(ME);
-  $('#eCountry').value = pl.country; $('#eState').value = pl.state; $('#eMuni').value = pl.municipio;
-  fillPlaceLists('e');
+  setPlace('e', pl);
   $('#eColonia').value = ME.colonia || '';
   $('#eAvatar').value = ME.avatar || '';
   $('#eCover').value = ME.cover || '';
@@ -2467,7 +2568,7 @@ function showSplash() {
   applyTheme(store.get('brivian.theme', null) || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
   fillSelects();
   renderLandingCategories();
-  renderLandingCommunities();
+  loadLandingCommunities();
   renderTypeChips();
   showSplash();
 

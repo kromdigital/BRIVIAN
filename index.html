@@ -140,12 +140,7 @@
         <label class="field-label" for="rCoverUrl">Enlace de tu portada <span class="muted">(opcional)</span></label>
         <input class="input" id="rCoverUrl" type="url" inputmode="url" autocapitalize="none" autocomplete="off" placeholder="https://…">
         <small class="img-status" id="rCoverStatus" role="status" aria-live="polite"></small>
-        <label class="field-label" for="rCountry">País</label>
-        <input class="input" id="rCountry" list="dlCountries" maxlength="60" autocomplete="off" value="México" placeholder="Elige de la lista o escribe el tuyo">
-        <label class="field-label" for="rState">Estado o región <span class="muted">(opcional)</span></label>
-        <input class="input" id="rState" list="dlStates" maxlength="60" autocomplete="off" placeholder="Ej. Jalisco">
-        <label class="field-label" for="rMuni">Ciudad o municipio</label>
-        <input class="input" id="rMuni" list="dlCities" maxlength="60" autocomplete="off" placeholder="Ej. Zapopan">
+        <div id="rPlace"></div>
         <label class="field-label" for="rColonia">Colonia o zona <span class="muted">(opcional)</span></label>
         <input class="input" id="rColonia" maxlength="60" placeholder="Ej. Colonia Americana">
         <small class="muted">Las fotos son opcionales: puedes agregarlas después desde "Editar perfil". Pega cualquier enlace: de una imagen, de una página o de Google. Buscamos la foto por ti.</small>
@@ -176,7 +171,7 @@
     </nav>
 
     <section class="hero">
-      <span class="pill"><i data-lucide="map-pin"></i> Desde Jalisco para todo el mundo</span>
+      <span class="pill"><i data-lucide="map-pin"></i> Emprendedores de varios países, un solo lugar</span>
       <h1>Tu emprendimiento merece <span class="accent">ser descubierto</span></h1>
       <p>Conecta con otros emprendedores, descubre nuevos negocios y construye una comunidad que impulse tu presencia digital.</p>
       <a href="#registro" id="heroCta" class="btn btn-accent btn-block"><i data-lucide="user-plus"></i> Crear mi perfil gratis</a>
@@ -232,7 +227,6 @@
   </div>
 
   <!-- ============ APP (con sesión) ============ -->
-  <datalist id="dlCountries"></datalist><datalist id="dlStates"></datalist><datalist id="dlCities"></datalist>
 
   <div id="app" hidden>
     <header class="topbar">
@@ -336,7 +330,7 @@
           <label class="field-label" for="postCat">Categoría</label>
           <select class="select" id="postCat"></select>
           <label class="field-label" for="postTags">Etiquetas (separadas por coma)</label>
-          <input class="input" id="postTags" placeholder="taller, cerámica, Tonalá">
+          <input class="input" id="postTags" placeholder="taller, cerámica, hecho a mano">
           <label class="field-label" for="postImgUrl">Foto <span class="muted">(opcional: pega el enlace de una imagen)</span></label>
           <input class="input" id="postImgUrl" type="url" inputmode="url" autocapitalize="none" autocomplete="off" placeholder="https://…">
           <small class="img-status" id="postImgStatus" role="status" aria-live="polite"></small>
@@ -533,12 +527,7 @@
       </select>
       <label class="field-label" for="eBio">Descripción corta</label>
       <textarea id="eBio" rows="3" maxlength="160"></textarea>
-      <label class="field-label" for="eCountry">País</label>
-      <input class="input" id="eCountry" list="dlCountries" maxlength="60" autocomplete="off" placeholder="Elige de la lista o escribe el tuyo">
-      <label class="field-label" for="eState">Estado o región <span class="muted">(opcional)</span></label>
-      <input class="input" id="eState" list="dlStates" maxlength="60" autocomplete="off" placeholder="Ej. Jalisco">
-      <label class="field-label" for="eMuni">Ciudad o municipio</label>
-      <input class="input" id="eMuni" list="dlCities" maxlength="60" autocomplete="off" placeholder="Ej. Zapopan">
+      <div id="ePlace"></div>
       <label class="field-label" for="eColonia">Colonia o zona</label>
       <input class="input" id="eColonia" maxlength="60">
       <label class="field-label" for="eAvatar">Enlace de tu foto de perfil</label>
@@ -722,7 +711,7 @@
       <label class="field-label" for="cTag">Sector, ciudad o tema</label>
       <select class="select" id="cTag"></select>
       <label class="field-label" for="cName">Nombre</label>
-      <input class="input" id="cName" maxlength="50" placeholder="Ej. Repostería de Tonalá">
+      <input class="input" id="cName" maxlength="50" placeholder="Ej. Repostería artesanal">
       <label class="field-label" for="cDesc">Descripción</label>
       <textarea id="cDesc" rows="3" maxlength="200" placeholder="¿Para qué es este espacio y quién puede unirse?"></textarea>
       <p class="form-error" id="commError" role="alert" hidden></p>
