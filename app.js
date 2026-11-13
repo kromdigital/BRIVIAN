@@ -12,7 +12,7 @@ import {
   doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc,
   query, where, orderBy, limit, limitToLast, startAfter, writeBatch, runTransaction, serverTimestamp, increment, onSnapshot,
 } from './firebase.js';
-import { GEO, COUNTRIES } from './geo.js';
+import { GEO, COUNTRIES, canonCountry, canonState, canonCity } from './geo.js';
 
 /* ---------- Utilidades ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -215,12 +215,21 @@ const CATEGORIES = [
 const norm = (s) => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
 const isMX = (c) => norm(c) === 'mexico';
 const canon = (v, list = []) => list.find((x) => norm(x) === norm(v)) || String(v || '').trim().replace(/\s+/g, ' ');
-/* Los perfiles anteriores no tenían país ni estado: se leen como Jalisco, México */
-const placeParts = (o = {}) => ({
-  municipio: o.municipio && o.municipio !== 'Otro' ? o.municipio : '',
-  state: o.state != null ? o.state : (o.country ? '' : 'Jalisco'),
-  country: o.country || 'México',
-});
+/* Los perfiles anteriores no tenían país ni estado: se leen como Jalisco, México.
+   Además se normaliza: "Jal", "jalisco" y "Jalisco" son el mismo estado (así filtros y "Mi zona" no se parten). */
+const placeCache = new Map();
+const placeParts = (o = {}) => {
+  const ck = `${o.country}|${o.state}|${o.municipio}`;
+  let r = placeCache.get(ck);
+  if (r) return r;
+  const country = canonCountry(o.country || 'México');
+  const state = canonState(country, o.state != null ? o.state : (o.country ? '' : 'Jalisco'));
+  const muni = o.municipio && o.municipio !== 'Otro' ? o.municipio : '';
+  r = { municipio: canonCity(country, state, muni), state, country };
+  if (placeCache.size > 3000) placeCache.clear();
+  placeCache.set(ck, r);
+  return r;
+};
 const placeText = (o) => { const p = placeParts(o); return [p.municipio, p.state, isMX(p.country) ? '' : p.country].filter(Boolean).join(', '); };
 const buildCity = ({ colonia, municipio, state, country }) => [colonia, municipio, state, isMX(country) ? '' : country].filter(Boolean).join(', ');
 const sameCity = (a, b) => {
@@ -323,7 +332,7 @@ const tidy = (s) => {
 };
 function readPlace(prefix) {
   const { cSel, cOth, sSel, sTxt, mSel, mTxt } = pf(prefix);
-  const country = cSel.value === OTHER ? canon(tidy(cOth.value), COUNTRIES) : cSel.value;
+  const country = cSel.value === OTHER ? canonCountry(tidy(cOth.value)) : cSel.value;
   const state = !sSel.hidden ? sSel.value : tidy(sTxt.value);
   const raw = !mSel.hidden ? (mSel.value === OTHER ? mTxt.value : mSel.value) : mTxt.value;
   const tree = GEO[country], cities = tree && tree[findIn(Object.keys(tree), state) || ''];
@@ -387,6 +396,18 @@ const cacheUsers = (list) => list.forEach((u) => u.uid && uCache.set(u.uid, { ..
 const VBADGE = '<span class="vbadge" role="img" aria-label="Cuenta verificada" title="Cuenta verificada"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 1.8l2.4 1.9 3-.3 1.2 2.8 2.8 1.2-.3 3L23 12l-1.9 2.4.3 3-2.8 1.2-1.2 2.8-3-.3L12 23l-2.4-1.9-3 .3-1.2-2.8-2.8-1.2.3-3L1 12l1.9-2.4-.3-3 2.8-1.2 1.2-2.8 3 .3z"/><path d="M8 12.3l2.7 2.7 5.6-5.6" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
 const vbadge = (u) => (u && u.verified === true ? VBADGE : '');
 const liveUser = (uid, fallback = {}) => (ME && uid === ME.uid ? ME : uCache.get(uid)) || fallback;
+/* Cada persona corrige su propio perfil al entrar: "Jal" → "Jalisco", sin país → México, etc. */
+async function healPlace() {
+  if (!ME) return;
+  const p = placeParts(ME), changes = {};
+  if (ME.country !== p.country) changes.country = p.country;
+  if ((ME.state ?? '') !== p.state && (p.state || ME.state != null)) changes.state = p.state;
+  if (p.municipio && ME.municipio !== p.municipio) changes.municipio = p.municipio;
+  if (!Object.keys(changes).length) return;
+  changes.city = buildCity({ colonia: ME.colonia, municipio: p.municipio || ME.municipio || '', state: p.state, country: p.country });
+  try { await updateDoc(doc(db, 'users', ME.uid), changes); Object.assign(ME, changes); data.peopleAt = 0; }
+  catch (e) { console.debug('healPlace', e && e.code); }
+}
 /* Mantiene el perfil al día: verified:true solo si el correo de Firebase está verificado */
 async function syncVerified() {
   const u = auth.currentUser;
@@ -442,6 +463,7 @@ async function loadSession(user, force = false) {
     Object.assign(state, { following, liked, saved, joined, blocked });
     IS_ADMIN = admin;
     setTimeout(syncVerified, 0);
+    setTimeout(healPlace, 0);
     return true;
   })();
   sessionTask = { uid: user.uid, p };
@@ -561,7 +583,7 @@ function fillSelects() {
   const catOpts = CATEGORIES.map((c) => `<option>${esc(c.name)}</option>`).join('');
   $('#feedCat').innerHTML = `<option value="all">Todas las categorías</option>${catOpts}`;
   $('#exCat').innerHTML = `<option value="all">Todas las categorías</option>${catOpts}`;
-  $('#exCity').innerHTML = '<option value="all">Todas las ubicaciones</option>';
+  $('#exCountry').innerHTML = '<option value="all">Todos los países</option>';
   $('#postCat').innerHTML = catOpts;
   $('#rCat').innerHTML = catOpts;
   $('#eCat').innerHTML = catOpts;
@@ -799,21 +821,33 @@ async function loadPeople(force = false) {
   data.peopleLoading = false;
   renderResults();
 }
-/* Filtro de ubicación de Explorar: por defecto se ve a todos; las opciones salen de los perfiles que existen */
+/* Filtro de ubicación de Explorar: País → Estado o región → Ciudad. Por defecto se ve a todos;
+   las opciones salen de los perfiles que existen (con cuántos hay en cada una). */
+const countBy = (arr, fn) => { const m = new Map(); arr.forEach((x) => { const k = fn(x); if (k) m.set(k, (m.get(k) || 0) + 1); }); return [...m.entries()].sort((x, y) => x[0].localeCompare(y[0], 'es')); };
 function fillLocFilter() {
-  const sel = $('#exCity'), prev = sel.value;
-  const countries = new Set(), states = new Set();
-  data.people.forEach((b) => { const p = placeParts(b); countries.add(p.country); if (p.state) states.add(p.state); });
+  const cSel = $('#exCountry'), sSel = $('#exState'), mSel = $('#exCity');
+  const prev = { c: cSel.value || 'all', s: sSel.value || 'all', m: mSel.value || 'all' };
   const opt = (v, l) => `<option value="${esc(v)}">${esc(l)}</option>`;
-  sel.innerHTML = '<option value="all">Todas las ubicaciones</option>'
-    + (countries.size > 1 ? `<optgroup label="Países">${[...countries].sort().map((c) => opt('country:' + c, c)).join('')}</optgroup>` : '')
-    + (states.size > 1 ? `<optgroup label="Estados o regiones">${[...states].sort().map((c) => opt('state:' + c, c)).join('')}</optgroup>` : '');
-  sel.value = [...sel.options].some((o) => o.value === prev) ? prev : 'all';
+  const fill = (sel, all, entries, want) => {
+    sel.innerHTML = opt('all', all) + entries.map(([k, n]) => opt(k, `${k} (${n})`)).join('');
+    sel.value = entries.some(([k]) => k === want) ? want : 'all';
+  };
+  const ps = data.people.map((b) => placeParts(b));
+  fill(cSel, 'Todos los países', countBy(ps, (p) => p.country), prev.c);
+  const inC = ps.filter((p) => cSel.value === 'all' || p.country === cSel.value);
+  const states = countBy(inC, (p) => p.state);
+  sSel.hidden = cSel.value === 'all' || !states.length;
+  fill(sSel, 'Todos los estados o regiones', states, prev.s);
+  const inS = inC.filter((p) => sSel.value === 'all' || p.state === sSel.value);
+  const cities = countBy(inS, (p) => p.municipio);
+  mSel.hidden = cSel.value === 'all' || !cities.length;
+  fill(mSel, 'Todas las ciudades', cities, prev.m);
 }
-function locMatch(b, f) {
-  if (f === 'all') return true;
-  const p = placeParts(b), [kind, ...rest] = f.split(':'), v = rest.join(':');
-  return kind === 'country' ? p.country === v : kind === 'state' ? p.state === v : true;
+function locMatch(b) {
+  const c = $('#exCountry').value, s = $('#exState').value, m = $('#exCity').value;
+  if (c === 'all') return true;
+  const p = placeParts(b);
+  return p.country === c && (s === 'all' || $('#exState').hidden || p.state === s) && (m === 'all' || $('#exCity').hidden || p.municipio === m);
 }
 function showExplorar() { loadPeople(); }
 function renderResults() {
@@ -824,12 +858,12 @@ function renderResults() {
     $('#resultsCount').textContent = ''; return;
   }
   const q = $('#q').value.trim().toLowerCase();
-  const cat = $('#exCat').value, city = $('#exCity').value;
+  const cat = $('#exCat').value;
   const monthAgo = Date.now() - 30 * 864e5;
   const list = data.people.filter((b) =>
     (!q || `${b.name} ${b.category} ${b.bio || ''} ${b.role || ''} ${b.handle} ${placeText(b)}`.toLowerCase().includes(q)) &&
     (cat === 'all' || b.category === cat) &&
-    locMatch(b, city) &&
+    locMatch(b) &&
     (!state.onlyNew || toMs(b.createdAt) > monthAgo) &&
     (!state.onlyMyCity || sameCity(b, ME)));
   $('#resultsCount').textContent = `${list.length} ${list.length === 1 ? 'emprendimiento' : 'emprendimientos'}`;
@@ -847,7 +881,8 @@ function renderResults() {
     : `<div class="empty">${data.people.length ? 'No encontramos resultados. Prueba con otra palabra o quita algún filtro.' : 'Aún no hay emprendimientos registrados.'}</div>`;
   icons();
 }
-['#q', '#exCat', '#exCity'].forEach((s) => $(s).addEventListener('input', renderResults));
+['#q', '#exCat'].forEach((s) => $(s).addEventListener('input', renderResults));
+['#exCountry', '#exState', '#exCity'].forEach((s) => $(s).addEventListener('change', () => { fillLocFilter(); renderResults(); }));
 $('#chipNew').addEventListener('click', (e) => { state.onlyNew = !state.onlyNew; e.currentTarget.classList.toggle('active', state.onlyNew); renderResults(); });
 $('#chipCity').addEventListener('click', (e) => { state.onlyMyCity = !state.onlyMyCity; e.currentTarget.classList.toggle('active', state.onlyMyCity); renderResults(); });
 $('#catGrid').addEventListener('click', (e) => {

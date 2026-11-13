@@ -171,3 +171,90 @@ for (const [country, text] of Object.entries(RAW)) {
 export const MAIN_COUNTRIES = ['México', 'Estados Unidos', 'Chile', 'Perú', 'Argentina'];
 export const COUNTRIES = [...MAIN_COUNTRIES, 'Bolivia', 'Brasil', 'Canadá', 'Colombia', 'Costa Rica', 'Cuba', 'Ecuador', 'El Salvador',
   'España', 'Guatemala', 'Honduras', 'Nicaragua', 'Panamá', 'Paraguay', 'Puerto Rico', 'República Dominicana', 'Uruguay', 'Venezuela'];
+
+/* ============================================================
+   Normalización: "Jal", "jalisco", "JAL." y "Jalisco" son el MISMO estado.
+   Se usa al leer cualquier perfil o publicación, y cada persona corrige su propio perfil al entrar.
+   ============================================================ */
+const nz = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const key = (s) => nz(s).replace(/[^a-z0-9ñ]/g, '');            // sin acentos, espacios ni puntos
+
+const COUNTRY_ALIASES = {
+  mx: 'México', mexico: 'México', mexicanos: 'México',
+  eeuu: 'Estados Unidos', usa: 'Estados Unidos', us: 'Estados Unidos', unitedstates: 'Estados Unidos', estadosunidosdeamerica: 'Estados Unidos', estadosunidosdeamérica: 'Estados Unidos',
+  espana: 'España', brazil: 'Brasil', canada: 'Canadá', rd: 'República Dominicana',
+};
+const COUNTRY_KEYS = new Map(COUNTRIES.map((c) => [key(c), c]));
+export function canonCountry(v) {
+  const k = key(v);
+  return !k ? '' : COUNTRY_KEYS.get(k) || COUNTRY_ALIASES[k] || String(v).trim().replace(/\s+/g, ' ');
+}
+
+const STATE_ALIASES = {
+  'México': {
+    cdmx: 'Ciudad de México', df: 'Ciudad de México', distritofederal: 'Ciudad de México', mexicocity: 'Ciudad de México', ciudaddemexico: 'Ciudad de México',
+    edomex: 'Estado de México', edodemex: 'Estado de México', estadomex: 'Estado de México', edomexico: 'Estado de México', edodemexico: 'Estado de México', edomx: 'Estado de México', mexico: 'Estado de México', mex: 'Estado de México', estadodemexico: 'Estado de México',
+    ags: 'Aguascalientes', dgo: 'Durango', bc: 'Baja California', bcs: 'Baja California Sur', nl: 'Nuevo León', qro: 'Querétaro', qroo: 'Quintana Roo',
+    gto: 'Guanajuato', slp: 'San Luis Potosí', tamps: 'Tamaulipas', hgo: 'Hidalgo', jal: 'Jalisco', mich: 'Michoacán', chis: 'Chiapas', yuc: 'Yucatán',
+  },
+  'Estados Unidos': {
+    al: 'Alabama', ak: 'Alaska', az: 'Arizona', ar: 'Arkansas', ca: 'California', co: 'Colorado', ct: 'Connecticut', de: 'Delaware', fl: 'Florida', ga: 'Georgia',
+    hi: 'Hawái', hawaii: 'Hawái', id: 'Idaho', il: 'Illinois', in: 'Indiana', ia: 'Iowa', ks: 'Kansas', ky: 'Kentucky', la: 'Luisiana', louisiana: 'Luisiana', me: 'Maine',
+    md: 'Maryland', ma: 'Massachusetts', mi: 'Míchigan', mn: 'Minnesota', ms: 'Misisipi', mississippi: 'Misisipi', mo: 'Misuri', missouri: 'Misuri', mt: 'Montana', ne: 'Nebraska',
+    nv: 'Nevada', nh: 'Nueva Hampshire', newhampshire: 'Nueva Hampshire', nj: 'Nueva Jersey', newjersey: 'Nueva Jersey', nm: 'Nuevo México', newmexico: 'Nuevo México',
+    ny: 'Nueva York', newyork: 'Nueva York', nc: 'Carolina del Norte', northcarolina: 'Carolina del Norte', nd: 'Dakota del Norte', northdakota: 'Dakota del Norte',
+    oh: 'Ohio', ok: 'Oklahoma', or: 'Oregón', pa: 'Pensilvania', pennsylvania: 'Pensilvania', ri: 'Rhode Island', sc: 'Carolina del Sur', southcarolina: 'Carolina del Sur',
+    sd: 'Dakota del Sur', southdakota: 'Dakota del Sur', tn: 'Tennessee', tx: 'Texas', ut: 'Utah', vt: 'Vermont', va: 'Virginia', wa: 'Washington', wv: 'Virginia Occidental',
+    westvirginia: 'Virginia Occidental', wi: 'Wisconsin', wy: 'Wyoming', dc: 'Distrito de Columbia', washingtondc: 'Distrito de Columbia',
+  },
+  'Chile': { rm: 'Metropolitana de Santiago', metropolitana: 'Metropolitana de Santiago', regionmetropolitana: 'Metropolitana de Santiago', santiago: 'Metropolitana de Santiago', araucania: 'La Araucanía', ohiggins: "O'Higgins", magallanes: 'Magallanes y de la Antártica Chilena' },
+  'Perú': { limametropolitana: 'Lima', limaprovincias: 'Lima' },
+  'Argentina': { caba: 'Ciudad Autónoma de Buenos Aires', capitalfederal: 'Ciudad Autónoma de Buenos Aires', ciudaddebuenosaires: 'Ciudad Autónoma de Buenos Aires', bsas: 'Ciudad Autónoma de Buenos Aires', pba: 'Buenos Aires', provinciadebuenosaires: 'Buenos Aires' },
+};
+const STATE_KEYS = {};
+for (const [c, tree] of Object.entries(GEO)) STATE_KEYS[c] = Object.keys(tree).map((s) => [key(s), s]);
+
+/* Estado canónico de un país con lista. Acepta abreviaturas ("Jal", "TX", "CDMX"), mayúsculas, acentos y puntos. */
+export function canonState(country, v) {
+  const raw = String(v ?? '').trim().replace(/\s+/g, ' ');
+  if (!raw) return '';
+  const list = STATE_KEYS[country];
+  if (!list) return raw;                                            // países sin lista: se deja como se escribió
+  let k = key(raw);
+  const exact = list.find(([sk]) => sk === k);
+  if (exact) return exact[1];
+  const alias = (STATE_ALIASES[country] || {})[k];
+  if (alias) return alias;
+  k = k.replace(/^(estadode|provinciade|regionde|departamentode)/, '');
+  const exact2 = list.find(([sk]) => sk === k);
+  if (exact2) return exact2[1];
+  if (k.length >= 3) {
+    const byPrefix = list.filter(([sk]) => sk.startsWith(k));        // "jal" → Jalisco, "guana" → Guanajuato
+    if (byPrefix.length === 1) return byPrefix[0][1];
+    const longer = list.filter(([sk]) => sk.length >= 4 && k.startsWith(sk)).sort((x, y) => y[0].length - x[0].length);   // "Lima Metropolitana"
+    if (longer.length) return longer[0][1];
+  }
+  return raw;
+}
+
+const CITY_ALIASES = { gdl: 'Guadalajara', tlajomulcodezuniga: 'Tlajomulco', tlajomulcodezúñiga: 'Tlajomulco', monterey: 'Monterrey', nyc: 'Nueva York', newyork: 'Nueva York', losangeles: 'Los Ángeles', la: 'Los Ángeles' };
+const CITY_KEYS = {};
+for (const [c, tree] of Object.entries(GEO)) {
+  CITY_KEYS[c] = {};
+  for (const [s, cities] of Object.entries(tree)) CITY_KEYS[c][s] = new Map(cities.map((x) => [key(x), x]));
+}
+export function canonCity(country, state, v) {
+  const raw = String(v ?? '').trim().replace(/\s+/g, ' ');
+  if (!raw) return '';
+  const k = key(raw), tree = CITY_KEYS[country];
+  if (!tree) return raw;
+  const inState = tree[state] && tree[state].get(k);
+  if (inState) return inState;
+  const alias = CITY_ALIASES[k];
+  if (alias && (!tree[state] || tree[state].has(key(alias)))) return alias;
+  if (!tree[state]) {                                               // sin estado claro: solo si el nombre es único en el país
+    const hits = Object.values(tree).map((m) => m.get(k)).filter(Boolean);
+    if (new Set(hits).size === 1 && hits.length === 1) return hits[0];
+  }
+  return raw;
+}
