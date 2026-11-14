@@ -184,6 +184,8 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
 .faq details[open] summary::after { content: '–'; }
 .faq p { color: var(--muted); padding-bottom: 16px; }
 .land-foot { text-align: center; padding: 40px 16px 48px; color: var(--muted); font-size: .85rem; }
+.land-foot .foot-link { color: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.land-foot .foot-link:hover { color: var(--primary); }
 
 /* ============ App shell ============ */
 #app main { padding: 18px 16px calc(var(--nav-h) + 28px); }
